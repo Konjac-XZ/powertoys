@@ -86,6 +86,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
             _disableRoundCornersOnSnap = Settings.Properties.FancyzonesDisableRoundCornersOnSnap.Value;
             _highlightOpacity = Settings.Properties.FancyzonesHighlightOpacity.Value;
             _excludedApps = Settings.Properties.FancyzonesExcludedApps.Value;
+            _excludedFromLastZoneApps = Settings.Properties.FancyzonesExcludedFromLastZoneApps.Value;
             _systemTheme = Settings.Properties.FancyzonesSystemTheme.Value;
             _showZoneNumber = Settings.Properties.FancyzonesShowZoneNumber.Value;
             EditorHotkey = Settings.Properties.FancyzonesEditorHotkey.Value;
@@ -163,6 +164,7 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
 
         private int _highlightOpacity;
         private string _excludedApps;
+        private string _excludedFromLastZoneApps;
         private HotkeySettings _editorHotkey;
         private bool _windowSwitching;
         private HotkeySettings _nextTabHotkey;
@@ -863,6 +865,24 @@ namespace Microsoft.PowerToys.Settings.UI.ViewModels
                 {
                     _excludedApps = value;
                     Settings.Properties.FancyzonesExcludedApps.Value = value;
+                    NotifyPropertyChanged();
+                }
+            }
+        }
+
+        public string ExcludedFromLastZoneApps
+        {
+            get
+            {
+                return _excludedFromLastZoneApps;
+            }
+
+            set
+            {
+                if (value != _excludedFromLastZoneApps)
+                {
+                    _excludedFromLastZoneApps = value;
+                    Settings.Properties.FancyzonesExcludedFromLastZoneApps.Value = value;
                     NotifyPropertyChanged();
                 }
             }

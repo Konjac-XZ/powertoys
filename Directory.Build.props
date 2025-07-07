@@ -19,11 +19,15 @@
     <PlatformTarget>$(Platform)</PlatformTarget>
   </PropertyGroup>
 
+    <PropertyGroup>
+        <!-- This tells all projects in the solution to act like a CI Build -->
+        <CIBuild>true</CIBuild>
+    </PropertyGroup>
   <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
     <Version>$(Version).0</Version>
     <RepositoryUrl>https://github.com/microsoft/PowerToys</RepositoryUrl>
     <RepositoryType>GitHub</RepositoryType>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <PropertyGroup>

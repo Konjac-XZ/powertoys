@@ -540,6 +540,24 @@ namespace ViewModelTests
         }
 
         [TestMethod]
+        public void ExcludedFromLastZoneAppsShouldSetValueWhenSuccessful()
+        {
+            Mock<SettingsUtils> mockSettingsUtils = new Mock<SettingsUtils>();
+
+            // arrange
+            FancyZonesViewModel viewModel = new FancyZonesViewModel(mockSettingsUtils.Object, SettingsRepository<GeneralSettings>.GetInstance(mockGeneralSettingsUtils.Object), SettingsRepository<FancyZonesSettings>.GetInstance(mockFancyZonesSettingsUtils.Object), sendMockIPCConfigMSG, FancyZonesTestFolderName);
+            Assert.AreEqual(string.Empty, viewModel.ExcludedFromLastZoneApps);
+
+            // act
+            viewModel.ExcludedFromLastZoneApps = "notepad.exe\nchrome.exe";
+
+            // assert
+            var expected = viewModel.ExcludedFromLastZoneApps;
+            var actual = SettingsRepository<FancyZonesSettings>.GetInstance(mockFancyZonesSettingsUtils.Object).SettingsConfig.Properties.FancyzonesExcludedFromLastZoneApps.Value;
+            Assert.AreEqual(expected, actual);
+        }
+
+        [TestMethod]
         public void HighlightOpacityShouldSetOpacityValueTo60WhenSuccessful()
         {
             Mock<SettingsUtils> mockSettingsUtils = new Mock<SettingsUtils>();

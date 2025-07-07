@@ -58,6 +58,8 @@ struct Settings
     PowerToysSettings::HotkeyObject prevTabHotkey = PowerToysSettings::HotkeyObject::from_settings(true, false, false, false, VK_PRIOR);
     std::wstring excludedApps = L"";
     std::vector<std::wstring> excludedAppsArray;
+    std::wstring excludedFromLastZoneApps = L"";
+    std::vector<std::wstring> excludedFromLastZoneAppsArray;
 };
 
 class FancyZonesSettings
