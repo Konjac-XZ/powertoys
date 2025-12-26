@@ -53,7 +53,7 @@ function RunMSBuild {
 
     $base = @(
         $Solution
-        "/p:Platform=`"$Platform`""
+        "/p:Platform=$Platform"
         "/p:Configuration=$Configuration"
         '/verbosity:normal'
         '/clp:Summary;PerformanceSummary;ErrorsOnly;WarningsOnly'
