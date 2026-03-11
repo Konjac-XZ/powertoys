@@ -9,10 +9,9 @@
 
   <!-- Target to generate sparse MSIX package -->
   <Target Name="GenerateSparsePackage" BeforeTargets="PrepareForBuild">
-    <!-- Use NoSign only for CI builds to avoid certificate issues on hosted agents -->
+    <!-- Local fork: always skip signing for sparse package generation. -->
     <PropertyGroup>
-      <NoSignParam Condition="'$(NoSignCI)' == 'true'">-NoSign</NoSignParam>
-      <NoSignParam Condition="'$(NoSignCI)' != 'true'"></NoSignParam>
+      <NoSignParam>-NoSign</NoSignParam>
       <CIBuildParam Condition="'$(CIBuild)' == 'true'">-CIBuild</CIBuildParam>
       <CIBuildParam Condition="'$(CIBuild)' != 'true'"></CIBuildParam>
     </PropertyGroup>
