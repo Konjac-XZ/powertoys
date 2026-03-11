@@ -19,6 +19,10 @@ struct LogSettings
     inline const static std::wstring gcodePrevLogPath = L"logs\\FileExplorer_localLow\\GcodePreviewHandler\\gcode-prev-handler-log.log";
     inline const static std::string gcodeThumbLoggerName = "GcodeThumbnailProvider";
     inline const static std::wstring gcodeThumbLogPath = L"logs\\FileExplorer_localLow\\GcodeThumbnailProvider\\gcode-thumbnail-provider-log.log";
+    inline const static std::string bgcodePrevLoggerName = "bgcodePrevHandler";
+    inline const static std::wstring bgcodePrevLogPath = L"logs\\FileExplorer_localLow\\BgcodePreviewHandler\\bgcode-prev-handler-log.log";
+    inline const static std::string bgcodeThumbLoggerName = "BgcodeThumbnailProvider";
+    inline const static std::wstring bgcodeThumbLogPath = L"logs\\FileExplorer_localLow\\BgcodeThumbnailProvider\\bgcode-thumbnail-provider-log.log";
     inline const static std::string mdPrevLoggerName = "MDPrevHandler";
     inline const static std::wstring mdPrevLogPath = L"logs\\FileExplorer_localLow\\MDPrevHandler\\md-prev-handler-log.log";
     inline const static std::string monacoPrevLoggerName = "MonacoPrevHandler";
@@ -55,6 +59,7 @@ struct LogSettings
     inline const static std::string mouseHighlighterLoggerName = "mouse-highlighter";
     inline const static std::string mouseJumpLoggerName = "mouse-jump";
     inline const static std::string mousePointerCrosshairsLoggerName = "mouse-pointer-crosshairs";
+    inline const static std::string cursorWrapLoggerName = "cursor-wrap";
     inline const static std::string imageResizerLoggerName = "imageresizer";
     inline const static std::string powerRenameLoggerName = "powerrename";
     inline const static std::string alwaysOnTopLoggerName = "always-on-top";
@@ -77,6 +82,8 @@ struct LogSettings
     inline const static std::string workspacesSnapshotToolLoggerName = "workspaces-snapshot-tool";
     inline const static std::wstring workspacesSnapshotToolLogPath = L"workspaces-snapshot-tool-log.log";
     inline const static std::string zoomItLoggerName = "zoom-it";
+    inline const static std::string lightSwitchLoggerName = "light-switch";
+    inline const static std::string powerDisplayLoggerName = "powerdisplay";
     inline const static int retention = 30;
     std::wstring logLevel;
     LogSettings();

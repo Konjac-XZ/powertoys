@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation
+// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
@@ -15,14 +15,10 @@ public partial class StatusMessageViewModel : ExtensionObjectViewModel
 
     public MessageState State { get; private set; } = MessageState.Info;
 
-    public string ExtensionPfn { get; set; } = string.Empty;
-
     public ProgressViewModel? Progress { get; private set; }
 
-    public bool HasProgress => Progress != null;
+    public bool HasProgress => Progress is not null;
 
-    // public bool IsIndeterminate => Progress != null && Progress.IsIndeterminate;
-    // public double ProgressValue => (Progress?.ProgressPercent ?? 0) / 100.0;
     public StatusMessageViewModel(IStatusMessage message, WeakReference<IPageContext> context)
         : base(context)
     {
@@ -32,7 +28,7 @@ public partial class StatusMessageViewModel : ExtensionObjectViewModel
     public override void InitializeProperties()
     {
         var model = Model.Unsafe;
-        if (model == null)
+        if (model is null)
         {
             return; // throw?
         }
@@ -40,7 +36,7 @@ public partial class StatusMessageViewModel : ExtensionObjectViewModel
         Message = model.Message;
         State = model.State;
         var modelProgress = model.Progress;
-        if (modelProgress != null)
+        if (modelProgress is not null)
         {
             Progress = new(modelProgress, this.PageContext);
             Progress.InitializeProperties();
@@ -65,7 +61,7 @@ public partial class StatusMessageViewModel : ExtensionObjectViewModel
     protected virtual void FetchProperty(string propertyName)
     {
         var model = this.Model.Unsafe;
-        if (model == null)
+        if (model is null)
         {
             return; // throw?
         }
@@ -80,7 +76,7 @@ public partial class StatusMessageViewModel : ExtensionObjectViewModel
                 break;
             case nameof(Progress):
                 var modelProgress = model.Progress;
-                if (modelProgress != null)
+                if (modelProgress is not null)
                 {
                     Progress = new(modelProgress, this.PageContext);
                     Progress.InitializeProperties();

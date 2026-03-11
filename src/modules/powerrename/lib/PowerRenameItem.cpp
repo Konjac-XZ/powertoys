@@ -74,7 +74,7 @@ IFACEMETHODIMP CPowerRenameItem::GetTime(_In_ DWORD flags, _Outptr_ SYSTEMTIME* 
     else
     {
         // Default to modification time if no specific flag is set
-        parsedTimeType = PowerRenameFlags::CreationTime;
+        parsedTimeType = PowerRenameFlags::CreationTime;    
     }
 
     if (m_isTimeParsed && parsedTimeType == m_parsedTimeType)
@@ -86,6 +86,13 @@ IFACEMETHODIMP CPowerRenameItem::GetTime(_In_ DWORD flags, _Outptr_ SYSTEMTIME* 
         HANDLE hFile = CreateFileW(m_path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
         if (hFile != INVALID_HANDLE_VALUE)
         {
+            // Use RAII-style scope guard to ensure handle is always closed
+            struct FileHandleCloser
+            {
+                HANDLE handle;
+                ~FileHandleCloser() { if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle); }
+            } scopedHandle{ hFile };
+
             FILETIME FileTime;
             bool success = false;
 
@@ -122,8 +129,6 @@ IFACEMETHODIMP CPowerRenameItem::GetTime(_In_ DWORD flags, _Outptr_ SYSTEMTIME* 
                 }
             }
         }
-
-        CloseHandle(hFile);
     }
     *time = m_time;
     return hr;
@@ -339,7 +344,7 @@ HRESULT CPowerRenameItem::_Init(_In_ IShellItem* psi)
                 // Some items can be both folders and streams (ex: zip folders).
                 m_isFolder = (att & SFGAO_FOLDER) && !(att & SFGAO_STREAM);
                 // The shell lets us know if an item should not be renamed
-                // (ex: user profile director, windows dir, etc).
+                // (ex: user profile director, windows dir, etc.).
                 m_canRename = (att & SFGAO_CANRENAME);
             }
         }

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation
+// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
@@ -22,11 +22,11 @@ public partial class IconInfoViewModel : ObservableObject, IIconInfo
 
     public IconDataViewModel Dark { get; private set; }
 
-    public IconDataViewModel IconForTheme(bool light) => Light = light ? Light : Dark;
+    public IconDataViewModel IconForTheme(bool light) => light ? Light : Dark;
 
     public bool HasIcon(bool light) => IconForTheme(light).HasIcon;
 
-    public bool IsSet => _model.Unsafe != null;
+    public bool IsSet => _model.Unsafe is not null;
 
     IIconData? IIconInfo.Dark => Dark;
 
@@ -43,7 +43,7 @@ public partial class IconInfoViewModel : ObservableObject, IIconInfo
     public void InitializeProperties()
     {
         var model = _model.Unsafe;
-        if (model == null)
+        if (model is null)
         {
             return;
         }

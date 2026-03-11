@@ -4,11 +4,14 @@
 
 using System.Runtime.InteropServices;
 using ManagedCommon;
+using Microsoft.CmdPal.Common.Services;
 using Microsoft.CmdPal.UI.Events;
 using Microsoft.PowerToys.Telemetry;
+using Microsoft.UI.Dispatching;
 using Microsoft.Windows.AppLifecycle;
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using Windows.Win32.System.Com;
 using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace Microsoft.CmdPal.UI;
@@ -18,6 +21,7 @@ namespace Microsoft.CmdPal.UI;
 // https://github.com/microsoft/WindowsAppSDK-Samples/tree/main/Samples/AppLifecycle/Instancing/cs2/cs-winui-packaged/CsWinUiDesktopInstancing
 internal sealed class Program
 {
+    private static DispatcherQueueSynchronizationContext? uiContext;
     private static App? app;
 
     // LOAD BEARING
@@ -62,6 +66,25 @@ internal sealed class Program
         }
 
         Logger.LogDebug($"Starting at {DateTime.UtcNow}");
+
+        // Log application startup information
+        try
+        {
+            var appInfoService = new ApplicationInfoService(() => Logger.CurrentVersionLogDirectoryPath);
+            var startupMessage = $"""
+                ============================================================
+                Hello World! Command Palette is starting.
+
+                {appInfoService.GetApplicationInfoSummary()}
+                ============================================================
+                """;
+            Logger.LogInfo(startupMessage);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError("Failed to log application startup information", ex);
+        }
+
         PowerToysTelemetry.Log.WriteEvent(new CmdPalProcessStarted());
 
         WinRT.ComWrappersSupport.InitializeComWrappers();
@@ -70,8 +93,8 @@ internal sealed class Program
         {
             Microsoft.UI.Xaml.Application.Start((p) =>
             {
-                Microsoft.UI.Dispatching.DispatcherQueueSynchronizationContext context = new(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
-                SynchronizationContext.SetSynchronizationContext(context);
+                uiContext = new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread());
+                SynchronizationContext.SetSynchronizationContext(uiContext);
                 app = new App();
             });
         }
@@ -94,25 +117,62 @@ internal sealed class Program
         {
             isRedirect = true;
             PowerToysTelemetry.Log.WriteEvent(new ReactivateInstance());
-            keyInstance.RedirectActivationToAsync(args).AsTask().ConfigureAwait(false);
+            RedirectActivationTo(args, keyInstance);
         }
 
         return isRedirect;
+    }
+
+    private static void RedirectActivationTo(AppActivationArguments args, AppInstance keyInstance)
+    {
+        // Do the redirection on another thread, and use a non-blocking
+        // wait method to wait for the redirection to complete.
+        using var redirectSemaphore = new Semaphore(0, 1);
+        var redirectTimeout = TimeSpan.FromSeconds(32);
+
+        _ = Task.Run(() =>
+        {
+            using var cts = new CancellationTokenSource(redirectTimeout);
+            try
+            {
+                keyInstance.RedirectActivationToAsync(args)
+                    .AsTask(cts.Token)
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.LogError($"Failed to activate existing instance; timed out after {redirectTimeout}.");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Failed to activate existing instance", ex);
+            }
+            finally
+            {
+                redirectSemaphore.Release();
+            }
+        });
+
+        _ = PInvoke.CoWaitForMultipleObjects(
+            (uint)CWMO_FLAGS.CWMO_DEFAULT,
+            PInvoke.INFINITE,
+            [new HANDLE(redirectSemaphore.SafeWaitHandle.DangerousGetHandle())],
+            out _);
     }
 
     private static void OnActivated(object? sender, AppActivationArguments args)
     {
         // If we already have a form, display the message now.
         // Otherwise, add it to the collection for displaying later.
-        if (App.Current is App thisApp)
+        if (App.Current?.AppWindow is MainWindow mainWindow)
         {
-            if (thisApp.AppWindow is not null and
-                MainWindow mainWindow)
-            {
-                mainWindow.HandleLaunch(args);
-
-                // mainWindow.Summon(string.Empty);
-            }
+            // LOAD BEARING
+            // This must be synchronous to ensure the method does not return
+            // before the activation is fully handled and the parameters are processed.
+            // The sending instance remains blocked until this returns; afterward it may quit,
+            // causing the activation arguments to be lost.
+            mainWindow.HandleLaunchNonUI(args);
         }
     }
 }

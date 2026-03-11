@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation
+// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
@@ -18,19 +18,12 @@ public record PerformCommandMessage
 
     public bool WithAnimation { get; set; } = true;
 
-    public CommandPaletteHost? ExtensionHost { get; private set; }
+    public bool TransientPage { get; set; }
 
     public PerformCommandMessage(ExtensionObject<ICommand> command)
     {
         Command = command;
         Context = null;
-    }
-
-    public PerformCommandMessage(TopLevelViewModel topLevelCommand)
-    {
-        Command = topLevelCommand.CommandViewModel.Model;
-        Context = null;
-        ExtensionHost = topLevelCommand.ExtensionHost;
     }
 
     public PerformCommandMessage(ExtensionObject<ICommand> command, ExtensionObject<IListItem> context)

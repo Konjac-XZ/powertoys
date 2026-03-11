@@ -1,10 +1,11 @@
-﻿// Copyright (c) Microsoft Corporation
+// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.CmdPal.Common.Helpers;
 using Microsoft.CmdPal.UI.ViewModels.Models;
 using Microsoft.CommandPalette.Extensions;
 
@@ -25,13 +26,30 @@ public partial class PageViewModel : ExtensionObjectViewModel, IPageContext
     [ObservableProperty]
     public partial string ErrorMessage { get; protected set; } = string.Empty;
 
+    /// <summary>
+    /// Explicitly: is this page, the VM for the root page. This is used
+    /// slightly differently than being "nested". When we open CmdPal as a
+    /// transient window, we want that page to not have a back button, but that
+    /// page is _not_ the root page.
+    ///
+    /// Later in ListViewModel, we will have logic that checks if it is the root
+    /// page, and modify how selection is handled when the list changes.
+    /// </summary>
     [ObservableProperty]
-    public partial bool IsNested { get; set; } = true;
+    public partial bool IsRootPage { get; set; } = true;
+
+    /// <summary>
+    /// This is used to determine whether to show the back button on this page.
+    /// When a nested page is opened for the transient "dock flyout" window,
+    /// then we don't want to show the back button.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool HasBackButton { get; set; } = true;
 
     // This is set from the SearchBar
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSuggestion))]
-    public partial string Filter { get; set; } = string.Empty;
+    public partial string SearchTextBox { get; set; } = string.Empty;
 
     [ObservableProperty]
     public virtual partial string PlaceholderText { get; private set; } = "Type here to search...";
@@ -40,12 +58,12 @@ public partial class PageViewModel : ExtensionObjectViewModel, IPageContext
     [NotifyPropertyChangedFor(nameof(ShowSuggestion))]
     public virtual partial string TextToSuggest { get; protected set; } = string.Empty;
 
-    public bool ShowSuggestion => !string.IsNullOrEmpty(TextToSuggest) && TextToSuggest != Filter;
+    public bool ShowSuggestion => !string.IsNullOrEmpty(TextToSuggest) && TextToSuggest != SearchTextBox;
 
     [ObservableProperty]
-    public partial CommandPaletteHost ExtensionHost { get; private set; }
+    public partial AppExtensionHost ExtensionHost { get; private set; }
 
-    public bool HasStatusMessage => MostRecentStatusMessage != null;
+    public bool HasStatusMessage => MostRecentStatusMessage is not null;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasStatusMessage))]
@@ -63,19 +81,28 @@ public partial class PageViewModel : ExtensionObjectViewModel, IPageContext
 
     public string Title { get => string.IsNullOrEmpty(field) ? Name : field; protected set; } = string.Empty;
 
+    public string Id { get; protected set; } = string.Empty;
+
     // This property maps to `IPage.IsLoading`, but we want to expose our own
     // `IsLoading` property as a combo of this value and `IsInitialized`
     public bool ModelIsLoading { get; protected set; } = true;
 
+    public bool HasSearchBox { get; protected set; } = true;
+
+    public bool HasFilters { get; protected set; }
+
     public IconInfoViewModel Icon { get; protected set; }
 
-    public PageViewModel(IPage? model, TaskScheduler scheduler, CommandPaletteHost extensionHost)
-        : base((IPageContext?)null)
+    public ICommandProviderContext ProviderContext { get; protected set; }
+
+    public PageViewModel(IPage? model, TaskScheduler scheduler, AppExtensionHost extensionHost, ICommandProviderContext providerContext)
+        : base(scheduler)
     {
+        InitializeSelfAsPageContext();
         _pageModel = new(model);
         Scheduler = scheduler;
-        PageContext = new(this);
         ExtensionHost = extensionHost;
+        ProviderContext = providerContext;
         Icon = new(null);
 
         ExtensionHost.StatusMessages.CollectionChanged += StatusMessages_CollectionChanged;
@@ -132,16 +159,19 @@ public partial class PageViewModel : ExtensionObjectViewModel, IPageContext
     public override void InitializeProperties()
     {
         var page = _pageModel.Unsafe;
-        if (page == null)
+        if (page is null)
         {
             return; // throw?
         }
 
+        Id = page.Id;
         Name = page.Name;
         ModelIsLoading = page.IsLoading;
         Title = page.Title;
         Icon = new(page.Icon);
         Icon.InitializeProperties();
+
+        HasSearchBox = page is IListPage;
 
         // Let the UI know about our initial properties too.
         UpdateProperty(nameof(Name));
@@ -149,6 +179,7 @@ public partial class PageViewModel : ExtensionObjectViewModel, IPageContext
         UpdateProperty(nameof(ModelIsLoading));
         UpdateProperty(nameof(IsLoading));
         UpdateProperty(nameof(Icon));
+        UpdateProperty(nameof(HasSearchBox));
 
         page.PropChanged += Model_PropChanged;
     }
@@ -166,9 +197,9 @@ public partial class PageViewModel : ExtensionObjectViewModel, IPageContext
         }
     }
 
-    partial void OnFilterChanged(string oldValue, string newValue) => OnFilterUpdated(newValue);
+    partial void OnSearchTextBoxChanged(string oldValue, string newValue) => OnSearchTextBoxUpdated(newValue);
 
-    protected virtual void OnFilterUpdated(string filter)
+    protected virtual void OnSearchTextBoxUpdated(string searchTextBox)
     {
         // The base page has no notion of data, so we do nothing here...
         // subclasses should override.
@@ -177,7 +208,7 @@ public partial class PageViewModel : ExtensionObjectViewModel, IPageContext
     protected virtual void FetchProperty(string propertyName)
     {
         var model = this._pageModel.Unsafe;
-        if (model == null)
+        if (model is null)
         {
             return; // throw?
         }
@@ -220,12 +251,13 @@ public partial class PageViewModel : ExtensionObjectViewModel, IPageContext
     {
         // Set the extensionHint to the Page Title (if we have one, and one not provided).
         // extensionHint ??= _pageModel?.Unsafe?.Title;
-        extensionHint ??= ExtensionHost.Extension?.ExtensionDisplayName ?? Title;
+        extensionHint ??= ExtensionHost.GetExtensionDisplayName() ?? Title;
         Task.Factory.StartNew(
             () =>
-        {
-            ErrorMessage += $"A bug occurred in {$"the \"{extensionHint}\"" ?? "an unknown's"} extension's code:\n{ex.Message}\n{ex.Source}\n{ex.StackTrace}\n\n";
-        },
+            {
+                var message = DiagnosticsHelper.BuildExceptionMessage(ex, extensionHint);
+                ErrorMessage += message;
+            },
             CancellationToken.None,
             TaskCreationOptions.None,
             Scheduler);
@@ -240,7 +272,7 @@ public partial class PageViewModel : ExtensionObjectViewModel, IPageContext
         ExtensionHost.StatusMessages.CollectionChanged -= StatusMessages_CollectionChanged;
 
         var model = _pageModel.Unsafe;
-        if (model != null)
+        if (model is not null)
         {
             model.PropChanged -= Model_PropChanged;
         }
@@ -249,7 +281,21 @@ public partial class PageViewModel : ExtensionObjectViewModel, IPageContext
 
 public interface IPageContext
 {
-    public void ShowException(Exception ex, string? extensionHint = null);
+    void ShowException(Exception ex, string? extensionHint = null);
 
-    public TaskScheduler Scheduler { get; }
+    TaskScheduler Scheduler { get; }
+
+    ICommandProviderContext ProviderContext { get; }
+}
+
+public interface IPageViewModelFactoryService
+{
+    /// <summary>
+    /// Creates a new instance of the page view model for the given page type.
+    /// </summary>
+    /// <param name="page">The page for which to create the view model.</param>
+    /// <param name="nested">Indicates whether the page is not the top-level page.</param>
+    /// <param name="host">The command palette host that will host the page (for status messages)</param>
+    /// <returns>A new instance of the page view model.</returns>
+    PageViewModel? TryCreatePageViewModel(IPage page, bool nested, AppExtensionHost host, ICommandProviderContext providerContext);
 }

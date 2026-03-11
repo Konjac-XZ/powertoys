@@ -8,7 +8,18 @@ namespace Microsoft.CmdPal.UI.ViewModels;
 
 public class ProviderSettings
 {
+    // List of built-in fallbacks that should not have global results enabled by default
+    private readonly string[] _excludedBuiltInFallbacks = [
+        "com.microsoft.cmdpal.builtin.indexer.fallback",
+        "com.microsoft.cmdpal.builtin.calculator.fallback",
+        "com.microsoft.cmdpal.builtin.remotedesktop.fallback",
+        ];
+
     public bool IsEnabled { get; set; } = true;
+
+    public Dictionary<string, FallbackSettings> FallbackCommands { get; set; } = new();
+
+    public List<string> PinnedCommandIds { get; set; } = [];
 
     [JsonIgnore]
     public string ProviderDisplayName { get; set; } = string.Empty;
@@ -33,9 +44,21 @@ public class ProviderSettings
     public void Connect(CommandProviderWrapper wrapper)
     {
         ProviderId = wrapper.ProviderId;
-        IsBuiltin = wrapper.Extension == null;
+        IsBuiltin = wrapper.Extension is null;
 
         ProviderDisplayName = wrapper.DisplayName;
+
+        if (wrapper.FallbackItems.Length > 0)
+        {
+            foreach (var fallback in wrapper.FallbackItems)
+            {
+                if (!FallbackCommands.ContainsKey(fallback.Id))
+                {
+                    var enableGlobalResults = IsBuiltin && !_excludedBuiltInFallbacks.Contains(fallback.Id);
+                    FallbackCommands[fallback.Id] = new FallbackSettings(enableGlobalResults);
+                }
+            }
+        }
 
         if (string.IsNullOrEmpty(ProviderId))
         {

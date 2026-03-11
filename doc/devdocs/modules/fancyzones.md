@@ -152,7 +152,7 @@ FancyZones is divided into several projects:
 ## Development Environment Setup
 
 ### Prerequisites
-- Visual Studio 2022: Required for building and debugging
+- Visual Studio 2026 (or 2022 17.4+): Required for building and debugging
 - Windows 10 SDK: Ensure the latest version is installed
 - PowerToys Repository: Clone from GitHub
 
@@ -161,7 +161,7 @@ FancyZones is divided into several projects:
    ```
    git clone https://github.com/microsoft/PowerToys.git
    ```
-2. Open `PowerToys.sln` in Visual Studio
+2. Open `PowerToys.slnx` in Visual Studio
 3. Select the Release configuration and build the solution
 4. If you encounter build errors, try deleting the x64 output folder and rebuild
 
@@ -183,7 +183,7 @@ FancyZones is divided into several projects:
 ## Debugging
 
 ### Setup for Debugging
-1. In Visual Studio 2022, set FancyZonesEditor as the startup project
+1. In Visual Studio, set FancyZonesEditor as the startup project
 2. Set breakpoints in the code where needed
 3. Click Run to start debugging
 
@@ -244,7 +244,7 @@ UI tests are implemented using [Windows Application Driver](https://github.com/m
   
   - Exit PowerToys if it's running
   - Run WinAppDriver.exe from the installation directory. Skip this step if installed in the default directory (`C:\Program Files (x86)\Windows Application Driver`); in this case, it'll be launched automatically during tests.
-  - Open `PowerToys.sln` in Visual Studio and build the solution.
+  - Open `PowerToys.slnx` in Visual Studio and build the solution.
   - Run tests in the Test Explorer (`Test > Test Explorer` or `Ctrl+E, T`). 
 
 >Note: notifications or other application windows, that are shown above the window under test, can disrupt the testing process.
@@ -444,9 +444,11 @@ PowerToys/doc/releases/tests-checklist-template.md at releaseChecklist · micros
 - ### First Run FancyZones error
 ![Debug Step Image](../images/fancyzones/16.png)
 
-If you encounter this situation, you need to launch the FancyZones Editor once in the powertoys settings UI (Refer to the image below). The reason is that running the Editor directly within the project will not initialize various configuration files.
+If you encounter this situation, you need to launch the FancyZones Editor once in the powertoys settings UI:
 
 ![Debug Step Image](../images/fancyzones/17.png)
+
+The reason is that running the Editor directly within the project will not initialize various configuration files.
 
 - ### How are layouts stored and loaded? Is there a central configuration handler?
 
@@ -471,7 +473,7 @@ When the Editor starts, it will load the config data, and when FancyZones starts
 
 About monitor detection you can find "FancyZones::MoveSizeUpdate" function. 
 
-I believe that in the case without DPI scaling, FancyZones retrieves the window's position and does not need to know what the mouse's DPI scaling is like. If you are referring to window scaling, it is called through the system interface, and you can see the detailed code in "WindowMouseSnap::MoveSizeEnd()" fucntion.
+I believe that in the case without DPI scaling, FancyZones retrieves the window's position and does not need to know what the mouse's DPI scaling is like. If you are referring to window scaling, it is called through the system interface, and you can see the detailed code in "WindowMouseSnap::MoveSizeEnd()" function.
 
 - ### How does FancyZones track which windows belong to which zones?
 

@@ -2,8 +2,6 @@
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using System;
-using System.Threading.Tasks;
 using Microsoft.CommandPalette.Extensions;
 using Microsoft.CommandPalette.Extensions.Toolkit;
 
@@ -24,7 +22,7 @@ public partial class ExtensionHostInstance
     /// <param name="message">The log message to send</param>
     public void LogMessage(ILogMessage message)
     {
-        if (Host != null)
+        if (Host is not null)
         {
             _ = Task.Run(async () =>
             {
@@ -47,7 +45,7 @@ public partial class ExtensionHostInstance
 
     public void ShowStatus(IStatusMessage message, StatusContext context)
     {
-        if (Host != null)
+        if (Host is not null)
         {
             _ = Task.Run(async () =>
             {
@@ -64,7 +62,7 @@ public partial class ExtensionHostInstance
 
     public void HideStatus(IStatusMessage message)
     {
-        if (Host != null)
+        if (Host is not null)
         {
             _ = Task.Run(async () =>
             {

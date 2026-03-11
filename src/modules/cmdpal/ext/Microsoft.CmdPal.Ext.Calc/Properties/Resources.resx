@@ -184,6 +184,12 @@
     <value>Ignores your system setting and expects numbers in the format '{0}'.</value>
     <comment>{0} is a placeholder and will be replaced in code.</comment>
   </data>
+  <data name="calculator_settings_close_on_enter" xml:space="preserve">
+    <value>Close on Enter</value>
+  </data>
+  <data name="calculator_settings_close_on_enter_description" xml:space="preserve">
+    <value>Makes Copy and close the primary command</value>
+  </data>
   <data name="calculator_settings_replace_input" xml:space="preserve">
     <value>Replace input if query ends with '='</value>
   </data>
@@ -201,5 +207,26 @@
   </data>
   <data name="calculator_expression_empty" xml:space="preserve">
     <value>Please enter an expression</value>
+  </data>
+  <data name="calculator_settings_copy_result_to_search_bar" xml:space="preserve">
+    <value>Replace query with result on equals</value>
+  </data>
+  <data name="calculator_settings_copy_result_to_search_bar_description" xml:space="preserve">
+    <value>Updates the query to the result when (=) is entered</value>
+  </data>
+  <data name="calculator_settings_auto_fix_query" xml:space="preserve">
+    <value>Fix incomplete calculations automatically</value>
+  </data>
+  <data name="calculator_settings_auto_fix_query_description" xml:space="preserve">
+    <value>Attempt to evaluate incomplete calculations by ignoring extra operators or symbols</value>
+  </data>
+  <data name="calculator_settings_input_normalization" xml:space="preserve">
+    <value>Handle extra operators and symbols</value>
+  </data>
+  <data name="calculator_settings_input_normalization_description" xml:space="preserve">
+    <value>Enable advanced input normalization and extra symbols (e.g. ÷, ×, π)</value>
+  </data>
+  <data name="calculator_copy_octal" xml:space="preserve">
+    <value>Copy octal</value>
   </data>
 </root>

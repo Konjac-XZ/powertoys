@@ -7,6 +7,4 @@ namespace Microsoft.CmdPal.UI.ViewModels.Messages;
 /// <summary>
 /// Used to perform a list item's command when the user presses enter in the search box
 /// </summary>
-public record ActivateSelectedListItemMessage
-{
-}
+public record ActivateSelectedListItemMessage;

@@ -97,7 +97,7 @@ namespace Microsoft.CmdPal.Ext.Shell.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Executes commands (e.g. &apos;ping&apos;, &apos;cmd&apos;).
+        ///   Looks up a localized string similar to Execute system commands like &apos;ping&apos; and &apos;cmd&apos;.
         /// </summary>
         public static string cmd_plugin_description {
             get {
@@ -129,6 +129,15 @@ namespace Microsoft.CmdPal.Ext.Shell.Properties {
         public static string cmd_run_as_user {
             get {
                 return ResourceManager.GetString("cmd_run_as_user", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Copy path.
+        /// </summary>
+        public static string copy_path_command_name {
+            get {
+                return ResourceManager.GetString("copy_path_command_name", resourceCulture);
             }
         }
         

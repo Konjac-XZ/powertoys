@@ -49,7 +49,7 @@ namespace EditorHelpers
         return numberOfSameType > 1;
     }
 
-    // Function to return true if the shortcut is valid. A valid shortcut has atleast one modifier, as well as an action key
+    // Function to return true if the shortcut is valid. A valid shortcut has at least one modifier, as well as an action key
     bool IsValidShortcut(Shortcut shortcut)
     {
         if (shortcut.operationType == Shortcut::OperationType::RunProgram && shortcut.runProgramFilePath.length() > 0)
@@ -140,12 +140,14 @@ namespace EditorHelpers
         // Win+L
         if (shortcut.winKey != ModifierKey::Disabled && shortcut.ctrlKey == ModifierKey::Disabled && shortcut.altKey == ModifierKey::Disabled && shortcut.shiftKey == ModifierKey::Disabled && shortcut.actionKey == 0x4C)
         {
+            Logger::info(L"Illegal shortcut detected: Win+L");
             return ShortcutErrorType::WinL;
         }
 
         // Ctrl+Alt+Del
         if (shortcut.winKey == ModifierKey::Disabled && shortcut.ctrlKey != ModifierKey::Disabled && shortcut.altKey != ModifierKey::Disabled && shortcut.shiftKey == ModifierKey::Disabled && shortcut.actionKey == VK_DELETE)
         {
+            Logger::info(L"Illegal shortcut detected: Ctrl+Alt+Del");
             return ShortcutErrorType::CtrlAltDel;
         }
 

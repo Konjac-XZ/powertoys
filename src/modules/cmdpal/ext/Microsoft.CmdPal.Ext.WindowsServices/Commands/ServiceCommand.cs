@@ -3,16 +3,10 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Resources;
-using System.Text;
 using System.Threading.Tasks;
 using Microsoft.CmdPal.Ext.WindowsServices.Helpers;
-using Microsoft.CommandPalette.Extensions;
+using Microsoft.CmdPal.Ext.WindowsServices.Properties;
 using Microsoft.CommandPalette.Extensions.Toolkit;
-using Windows.UI;
 
 namespace Microsoft.CmdPal.Ext.WindowsServices.Commands;
 
@@ -25,15 +19,15 @@ internal sealed partial class ServiceCommand : InvokableCommand
     {
         _serviceResult = serviceResult;
         _action = action;
-        Name = action.ToString();
-        if (serviceResult.IsRunning)
+        Name = action switch
         {
-            Icon = new IconInfo("\xE71A"); // Stop icon
-        }
-        else
-        {
-            Icon = new IconInfo("\xEDB5"); // Playbadge12 icon
-        }
+            Action.Start => Resources.wox_plugin_service_start,
+            Action.Stop => Resources.wox_plugin_service_stop,
+            Action.Restart => Resources.wox_plugin_service_restart,
+            _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
+        };
+
+        Icon = serviceResult.IsRunning ? Icons.StopIcon : Icons.PlayIcon;
     }
 
     public override CommandResult Invoke()

@@ -4,7 +4,9 @@
 
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenQA.Selenium;
 
@@ -20,20 +22,28 @@ namespace Microsoft.PowerToys.UITest
 
         public required Session Session { get; set; }
 
+        /// <summary>
+        /// Gets a value indicating whether the tests are running in a CI/CD pipeline.
+        /// </summary>
         public bool IsInPipeline { get; }
+
+        public string? ScreenshotDirectory { get; set; }
+
+        public string? RecordingDirectory { get; set; }
 
         public static MonitorInfoData.ParamsWrapper MonitorInfoData { get; set; } = new MonitorInfoData.ParamsWrapper() { Monitors = new List<MonitorInfoData.MonitorInfoDataWrapper>() };
 
         private readonly PowerToysModule scope;
         private readonly WindowSize size;
+        private readonly string[]? commandLineArgs;
         private SessionHelper? sessionHelper;
         private System.Threading.Timer? screenshotTimer;
-        private string? screenshotDirectory;
+        private ScreenRecording? screenRecording;
 
-        public UITestBase(PowerToysModule scope = PowerToysModule.PowerToysSettings, WindowSize size = WindowSize.UnSpecified)
+        public UITestBase(PowerToysModule scope = PowerToysModule.PowerToysSettings, WindowSize size = WindowSize.UnSpecified, string[]? commandLineArgs = null)
         {
-            this.IsInPipeline = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("platform"));
-            Console.WriteLine($"Running tests on platform: {Environment.GetEnvironmentVariable("platform")}");
+            this.IsInPipeline = EnvironmentConfig.IsInPipeline;
+            Console.WriteLine($"Running tests on platform: {EnvironmentConfig.Platform}");
             if (IsInPipeline)
             {
                 NativeMethods.ChangeDisplayResolution(1920, 1080);
@@ -45,6 +55,7 @@ namespace Microsoft.PowerToys.UITest
 
             this.scope = scope;
             this.size = size;
+            this.commandLineArgs = commandLineArgs;
         }
 
         /// <summary>
@@ -53,31 +64,45 @@ namespace Microsoft.PowerToys.UITest
         [TestInitialize]
         public void TestInit()
         {
+            KeyboardHelper.SendKeys(Key.Win, Key.M);
             CloseOtherApplications();
             if (IsInPipeline)
             {
-                screenshotDirectory = Path.Combine(this.TestContext.TestResultsDirectory ?? string.Empty, "UITestScreenshots_" + Guid.NewGuid().ToString());
-                Directory.CreateDirectory(screenshotDirectory);
+                string baseDirectory = this.TestContext.TestResultsDirectory ?? string.Empty;
+                ScreenshotDirectory = Path.Combine(baseDirectory, "UITestScreenshots_" + Guid.NewGuid().ToString());
+                Directory.CreateDirectory(ScreenshotDirectory);
+
+                RecordingDirectory = Path.Combine(baseDirectory, "UITestRecordings_" + Guid.NewGuid().ToString());
+                Directory.CreateDirectory(RecordingDirectory);
 
                 // Take screenshot every 1 second
-                screenshotTimer = new System.Threading.Timer(ScreenCapture.TimerCallback, screenshotDirectory, TimeSpan.Zero, TimeSpan.FromMilliseconds(1000));
+                screenshotTimer = new System.Threading.Timer(ScreenCapture.TimerCallback, ScreenshotDirectory, TimeSpan.Zero, TimeSpan.FromMilliseconds(1000));
+
+                // Start screen recording (requires FFmpeg)
+                try
+                {
+                    screenRecording = new ScreenRecording(RecordingDirectory);
+                    if (screenRecording.IsAvailable)
+                    {
+                        _ = screenRecording.StartRecordingAsync();
+                    }
+                    else
+                    {
+                        screenRecording = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to start screen recording: {ex.Message}");
+                    screenRecording = null;
+                }
 
                 // Escape Popups before starting
                 System.Windows.Forms.SendKeys.SendWait("{ESC}");
             }
 
-            this.sessionHelper = new SessionHelper(scope).Init();
+            this.sessionHelper = new SessionHelper(scope, commandLineArgs).Init();
             this.Session = new Session(this.sessionHelper.GetRoot(), this.sessionHelper.GetDriver(), scope, size);
-
-            if (this.scope == PowerToysModule.PowerToysSettings)
-            {
-                // close Debug warning dialog if any
-                // Such debug warning dialog seems only appear in PowerToys Settings
-                if (this.FindAll("DEBUG").Count > 0)
-                {
-                    this.Find("DEBUG").Find<Button>("Close").Click();
-                }
-            }
         }
 
         /// <summary>
@@ -89,14 +114,36 @@ namespace Microsoft.PowerToys.UITest
             if (IsInPipeline)
             {
                 screenshotTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-                Dispose();
+
+                // Stop screen recording
+                if (screenRecording != null)
+                {
+                    try
+                    {
+                        screenRecording.StopRecordingAsync().GetAwaiter().GetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Failed to stop screen recording: {ex.Message}");
+                    }
+                }
+
                 if (TestContext.CurrentTestOutcome is UnitTestOutcome.Failed
                     or UnitTestOutcome.Error
                     or UnitTestOutcome.Unknown)
                 {
                     Task.Delay(1000).Wait();
                     AddScreenShotsToTestResultsDirectory();
+                    AddRecordingsToTestResultsDirectory();
+                    AddLogFilesToTestResultsDirectory();
                 }
+                else
+                {
+                    // Clean up recording if test passed
+                    CleanupRecordingDirectory();
+                }
+
+                Dispose();
             }
 
             this.Session.Cleanup();
@@ -106,6 +153,7 @@ namespace Microsoft.PowerToys.UITest
         public void Dispose()
         {
             screenshotTimer?.Dispose();
+            screenRecording?.Dispose();
             GC.SuppressFinalize(this);
         }
 
@@ -164,7 +212,7 @@ namespace Microsoft.PowerToys.UITest
         /// <typeparam name="T">The class of the element, should be Element or its derived class.</typeparam>
         /// <param name="by">The name of the element.</param>
         /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
-        /// <returns>True if only has one element, otherwise false.</returns>
+        /// <returns>True if only has one element; otherwise, false.</returns>
         public bool HasOne<T>(By by, int timeoutMS = 5000, bool global = false)
             where T : Element, new()
         {
@@ -176,7 +224,7 @@ namespace Microsoft.PowerToys.UITest
         /// </summary>
         /// <param name="by">The name of the element.</param>
         /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
-        /// <returns>True if only has one element, otherwise false.</returns>
+        /// <returns>True if only has one element; otherwise, false.</returns>
         public bool HasOne(By by, int timeoutMS = 5000, bool global = false)
         {
             return this.Session.HasOne<Element>(by, timeoutMS, global);
@@ -188,7 +236,7 @@ namespace Microsoft.PowerToys.UITest
         /// <typeparam name="T">The class of the element, should be Element or its derived class.</typeparam>
         /// <param name="name">The name of the element.</param>
         /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
-        /// <returns>True if only has one element, otherwise false.</returns>
+        /// <returns>True if only has one element; otherwise, false.</returns>
         public bool HasOne<T>(string name, int timeoutMS = 5000, bool global = false)
             where T : Element, new()
         {
@@ -200,7 +248,7 @@ namespace Microsoft.PowerToys.UITest
         /// </summary>
         /// <param name="name">The name of the element.</param>
         /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
-        /// <returns>True if only has one element, otherwise false.</returns>
+        /// <returns>True if only has one element; otherwise, false.</returns>
         public bool HasOne(string name, int timeoutMS = 5000, bool global = false)
         {
             return this.Session.HasOne<Element>(name, timeoutMS, global);
@@ -212,7 +260,7 @@ namespace Microsoft.PowerToys.UITest
         /// <typeparam name="T">The class of the element, should be Element or its derived class.</typeparam>
         /// <param name="by">The selector to find the element.</param>
         /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
-        /// <returns>True if  has one or more element, otherwise false.</returns>
+        /// <returns>True if  has one or more element; otherwise, false.</returns>
         public bool Has<T>(By by, int timeoutMS = 5000, bool global = false)
             where T : Element, new()
         {
@@ -224,7 +272,7 @@ namespace Microsoft.PowerToys.UITest
         /// </summary>
         /// <param name="by">The selector to find the element.</param>
         /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
-        /// <returns>True if  has one or more element, otherwise false.</returns>
+        /// <returns>True if  has one or more element; otherwise, false.</returns>
         public bool Has(By by, int timeoutMS = 5000, bool global = false)
         {
             return this.Session.Has<Element>(by, timeoutMS, global);
@@ -236,7 +284,7 @@ namespace Microsoft.PowerToys.UITest
         /// <typeparam name="T">The class of the element, should be Element or its derived class.</typeparam>
         /// <param name="name">The name of the element.</param>
         /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
-        /// <returns>True if  has one or more element, otherwise false.</returns>
+        /// <returns>True if  has one or more element; otherwise, false.</returns>
         public bool Has<T>(string name, int timeoutMS = 5000, bool global = false)
             where T : Element, new()
         {
@@ -248,10 +296,178 @@ namespace Microsoft.PowerToys.UITest
         /// </summary>
         /// <param name="name">The name of the element.</param>
         /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
-        /// <returns>True if  has one or more element, otherwise false.</returns>
+        /// <returns>True if  has one or more element; otherwise, false.</returns>
         public bool Has(string name, int timeoutMS = 5000, bool global = false)
         {
             return this.Session.Has<Element>(name, timeoutMS, global);
+        }
+
+        /// <summary>
+        /// Finds an element using partial name matching (contains).
+        /// Useful for finding windows with variable titles like "filename.txt - Notepad" or "filename - Notepad".
+        /// </summary>
+        /// <typeparam name="T">The class of the element, should be Element or its derived class.</typeparam>
+        /// <param name="partialName">Part of the name to search for.</param>
+        /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
+        /// <returns>The found element.</returns>
+        protected T FindByPartialName<T>(string partialName, int timeoutMS = 5000, bool global = false)
+            where T : Element, new()
+        {
+            return Session.Find<T>(By.XPath($"//*[contains(@Name, '{partialName}')]"), timeoutMS, global);
+        }
+
+        /// <summary>
+        /// Finds an element using partial name matching (contains).
+        /// </summary>
+        /// <param name="partialName">Part of the name to search for.</param>
+        /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
+        /// <returns>The found element.</returns>
+        protected Element FindByPartialName(string partialName, int timeoutMS = 5000, bool global = false)
+        {
+            return FindByPartialName<Element>(partialName, timeoutMS, global);
+        }
+
+        /// <summary>
+        /// Base method for finding elements by selector and filtering by name pattern.
+        /// </summary>
+        /// <typeparam name="T">The class of the element, should be Element or its derived class.</typeparam>
+        /// <param name="selector">The selector to find initial candidates.</param>
+        /// <param name="namePattern">Pattern to match against the Name attribute. Supports regex patterns.</param>
+        /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
+        /// <param name="errorMessage">Custom error message when no element is found.</param>
+        /// <returns>The found element.</returns>
+        private T FindByNamePattern<T>(By selector, string namePattern, int timeoutMS = 5000, bool global = false, string? errorMessage = null)
+            where T : Element, new()
+        {
+            var elements = Session.FindAll<T>(selector, timeoutMS, global);
+            var regex = new Regex(namePattern, RegexOptions.IgnoreCase);
+
+            foreach (var element in elements)
+            {
+                var name = element.GetAttribute("Name");
+                if (!string.IsNullOrEmpty(name) && regex.IsMatch(name))
+                {
+                    return element;
+                }
+            }
+
+            throw new NoSuchElementException(errorMessage ?? $"No element found matching pattern: {namePattern}");
+        }
+
+        /// <summary>
+        /// Finds an element using regular expression pattern matching.
+        /// </summary>
+        /// <typeparam name="T">The class of the element, should be Element or its derived class.</typeparam>
+        /// <param name="pattern">Regular expression pattern to match against the Name attribute.</param>
+        /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
+        /// <returns>The found element.</returns>
+        protected T FindByPattern<T>(string pattern, int timeoutMS = 5000, bool global = false)
+            where T : Element, new()
+        {
+            return FindByNamePattern<T>(By.XPath("//*[@Name]"), pattern, timeoutMS, global, $"No element found matching pattern: {pattern}");
+        }
+
+        /// <summary>
+        /// Finds an element using regular expression pattern matching.
+        /// </summary>
+        /// <param name="pattern">Regular expression pattern to match against the Name attribute.</param>
+        /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
+        /// <returns>The found element.</returns>
+        protected Element FindByPattern(string pattern, int timeoutMS = 5000, bool global = false)
+        {
+            return FindByPattern<Element>(pattern, timeoutMS, global);
+        }
+
+        /// <summary>
+        /// Finds an element by ClassName only.
+        /// Returns the first element found with the specified ClassName.
+        /// </summary>
+        /// <typeparam name="T">The class of the element, should be Element or its derived class.</typeparam>
+        /// <param name="className">The ClassName to search for (e.g., "Notepad", "CabinetWClass").</param>
+        /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
+        /// <returns>The found element.</returns>
+        protected T FindByClassName<T>(string className, int timeoutMS = 5000, bool global = false)
+            where T : Element, new()
+        {
+            return Session.Find<T>(By.ClassName(className), timeoutMS, global);
+        }
+
+        /// <summary>
+        /// Finds an element by ClassName only.
+        /// Returns the first element found with the specified ClassName.
+        /// </summary>
+        /// <param name="className">The ClassName to search for (e.g., "Notepad", "CabinetWClass").</param>
+        /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
+        /// <returns>The found element.</returns>
+        protected Element FindByClassName(string className, int timeoutMS = 5000, bool global = false)
+        {
+            return FindByClassName<Element>(className, timeoutMS, global);
+        }
+
+        /// <summary>
+        /// Finds an element by ClassName and matches its Name attribute using regex pattern matching.
+        /// </summary>
+        /// <typeparam name="T">The class of the element, should be Element or its derived class.</typeparam>
+        /// <param name="className">The ClassName to search for (e.g., "Notepad", "CabinetWClass").</param>
+        /// <param name="namePattern">Pattern to match against the Name attribute. Supports regex patterns.</param>
+        /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
+        /// <returns>The found element.</returns>
+        protected T FindByClassNameAndNamePattern<T>(string className, string namePattern, int timeoutMS = 5000, bool global = false)
+            where T : Element, new()
+        {
+            return FindByNamePattern<T>(By.ClassName(className), namePattern, timeoutMS, global, $"No element with ClassName '{className}' found matching name pattern: {namePattern}");
+        }
+
+        /// <summary>
+        /// Finds an element by ClassName and matches its Name attribute using regex pattern matching.
+        /// </summary>
+        /// <param name="className">The ClassName to search for (e.g., "Notepad", "CabinetWClass").</param>
+        /// <param name="namePattern">Pattern to match against the Name attribute. Supports regex patterns.</param>
+        /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
+        /// <returns>The found element.</returns>
+        protected Element FindByClassNameAndNamePattern(string className, string namePattern, int timeoutMS = 5000, bool global = false)
+        {
+            return FindByClassNameAndNamePattern<Element>(className, namePattern, timeoutMS, global);
+        }
+
+        /// <summary>
+        /// Finds a Notepad window regardless of whether the file extension is shown in the title.
+        /// Handles both "filename.txt - Notepad" and "filename - Notepad" formats.
+        /// Uses ClassName to efficiently find Notepad windows first, then matches the filename.
+        /// </summary>
+        /// <param name="baseFileName">The base filename without extension (e.g., "test" for "test.txt").</param>
+        /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
+        /// <returns>The found Notepad window element.</returns>
+        protected Element FindNotepadWindow(string baseFileName, int timeoutMS = 5000, bool global = false)
+        {
+            string pattern = $@"^{Regex.Escape(baseFileName)}(\.\w+)?(\s*-\s*|\s+)Notepad$";
+            return FindByClassNameAndNamePattern("Notepad", pattern, timeoutMS, global);
+        }
+
+        /// <summary>
+        /// Finds an Explorer window regardless of the folder or file name display format.
+        /// Handles various Explorer window title formats like "FolderName", "FileName", "FolderName - File Explorer", etc.
+        /// Uses ClassName to efficiently find Explorer windows first, then matches the folder or file name.
+        /// </summary>
+        /// <param name="folderName">The folder or file name to search for (e.g., "Documents", "Desktop", "test.txt").</param>
+        /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
+        /// <returns>The found Explorer window element.</returns>
+        protected Element FindExplorerWindow(string folderName, int timeoutMS = 5000, bool global = false)
+        {
+            string pattern = $@"^{Regex.Escape(folderName)}(\s*-\s*(File\s+Explorer|Windows\s+Explorer))?$";
+            return FindByClassNameAndNamePattern("CabinetWClass", pattern, timeoutMS, global);
+        }
+
+        /// <summary>
+        /// Finds an Explorer window by partial folder path.
+        /// Useful when the full path might be displayed in the title.
+        /// </summary>
+        /// <param name="partialPath">Part of the folder path to search for.</param>
+        /// <param name="timeoutMS">The timeout in milliseconds (default is 5000).</param>
+        /// <returns>The found Explorer window element.</returns>
+        protected Element FindExplorerByPartialPath(string partialPath, int timeoutMS = 5000, bool global = false)
+        {
+            return FindByPartialName(partialPath, timeoutMS, global);
         }
 
         /// <summary>
@@ -423,9 +639,9 @@ namespace Microsoft.PowerToys.UITest
 
         protected void AddScreenShotsToTestResultsDirectory()
         {
-            if (screenshotDirectory != null)
+            if (ScreenshotDirectory != null)
             {
-                foreach (string file in Directory.GetFiles(screenshotDirectory))
+                foreach (string file in Directory.GetFiles(ScreenshotDirectory))
                 {
                     this.TestContext.AddResultFile(file);
                 }
@@ -433,13 +649,140 @@ namespace Microsoft.PowerToys.UITest
         }
 
         /// <summary>
+        /// Adds screen recordings to test results directory when test fails.
+        /// </summary>
+        protected void AddRecordingsToTestResultsDirectory()
+        {
+            if (RecordingDirectory != null && Directory.Exists(RecordingDirectory))
+            {
+                // Add video files (MP4)
+                var videoFiles = Directory.GetFiles(RecordingDirectory, "*.mp4");
+                foreach (string file in videoFiles)
+                {
+                    this.TestContext.AddResultFile(file);
+                    var fileInfo = new FileInfo(file);
+                    Console.WriteLine($"Added video recording: {Path.GetFileName(file)} ({fileInfo.Length / 1024 / 1024:F1} MB)");
+                }
+
+                if (videoFiles.Length == 0)
+                {
+                    Console.WriteLine("No video recording available (FFmpeg not found). Screenshots are still captured.");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Cleans up recording directory when test passes.
+        /// </summary>
+        private void CleanupRecordingDirectory()
+        {
+            if (RecordingDirectory != null && Directory.Exists(RecordingDirectory))
+            {
+                try
+                {
+                    Directory.Delete(RecordingDirectory, true);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to cleanup recording directory: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Copies PowerToys log files to test results directory when test fails.
+        /// Renames files to include the directory structure after \PowerToys.
+        /// </summary>
+        protected void AddLogFilesToTestResultsDirectory()
+        {
+            try
+            {
+                var localAppDataLow = Path.Combine(
+                    Environment.GetEnvironmentVariable("USERPROFILE") ?? string.Empty,
+                    "AppData",
+                    "LocalLow",
+                    "Microsoft",
+                    "PowerToys");
+
+                if (Directory.Exists(localAppDataLow))
+                {
+                    CopyLogFilesFromDirectory(localAppDataLow, string.Empty);
+                }
+
+                var localAppData = Path.Combine(
+                    Environment.GetEnvironmentVariable("LOCALAPPDATA") ?? string.Empty,
+                    "Microsoft",
+                    "PowerToys");
+
+                if (Directory.Exists(localAppData))
+                {
+                    CopyLogFilesFromDirectory(localAppData, string.Empty);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Don't fail the test if log file copying fails
+                Console.WriteLine($"Failed to copy log files: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Recursively copies log files from a directory and renames them with directory structure.
+        /// </summary>
+        /// <param name="sourceDir">Source directory to copy from</param>
+        /// <param name="relativePath">Relative path from PowerToys folder</param>
+        private void CopyLogFilesFromDirectory(string sourceDir, string relativePath)
+        {
+            if (!Directory.Exists(sourceDir))
+            {
+                return;
+            }
+
+            // Process log files in current directory
+            var logFiles = Directory.GetFiles(sourceDir, "*.log");
+            foreach (var logFile in logFiles)
+            {
+                try
+                {
+                    var fileName = Path.GetFileName(logFile);
+                    var fileNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+                    var extension = Path.GetExtension(fileName);
+
+                    // Create new filename with directory structure
+                    var directoryPart = string.IsNullOrEmpty(relativePath) ? string.Empty : relativePath.Replace("\\", "-") + "-";
+                    var newFileName = $"{directoryPart}{fileNameWithoutExt}{extension}";
+
+                    // Copy file to test results directory with new name
+                    var testResultsDir = TestContext.TestResultsDirectory ?? Path.GetTempPath();
+                    var destinationPath = Path.Combine(testResultsDir, newFileName);
+
+                    File.Copy(logFile, destinationPath, true);
+                    TestContext.AddResultFile(destinationPath);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to copy log file {logFile}: {ex.Message}");
+                }
+            }
+
+            // Recursively process subdirectories
+            var subdirectories = Directory.GetDirectories(sourceDir);
+            foreach (var subdir in subdirectories)
+            {
+                var dirName = Path.GetFileName(subdir);
+                var newRelativePath = string.IsNullOrEmpty(relativePath) ? dirName : Path.Combine(relativePath, dirName);
+                CopyLogFilesFromDirectory(subdir, newRelativePath);
+            }
+        }
+
+        /// <summary>
         /// Restart scope exe.
         /// </summary>
-        public void RestartScopeExe()
+        public Session RestartScopeExe(string? enableModules = null)
         {
-            this.sessionHelper!.RestartScopeExe();
+            this.sessionHelper!.RestartScopeExe(enableModules);
             this.Session = new Session(this.sessionHelper.GetRoot(), this.sessionHelper.GetDriver(), this.scope, this.size);
-            return;
+            return Session;
         }
 
         /// <summary>
@@ -633,6 +976,23 @@ namespace Microsoft.PowerToys.UITest
                 else
                 {
                     Console.WriteLine($"Failed to change display resolution. Error code: {result}");
+                }
+            }
+
+            // Windows API for moving windows
+            [DllImport("user32.dll")]
+            private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
+
+            private const uint SWPNOSIZE = 0x0001;
+            private const uint SWPNOZORDER = 0x0004;
+
+            public static void MoveWindow(Element window, int x, int y)
+            {
+                var windowHandle = IntPtr.Parse(window.GetAttribute("NativeWindowHandle") ?? "0", System.Globalization.CultureInfo.InvariantCulture);
+                if (windowHandle != IntPtr.Zero)
+                {
+                    SetWindowPos(windowHandle, IntPtr.Zero, x, y, 0, 0, SWPNOSIZE | SWPNOZORDER);
+                    Task.Delay(500).Wait();
                 }
             }
         }

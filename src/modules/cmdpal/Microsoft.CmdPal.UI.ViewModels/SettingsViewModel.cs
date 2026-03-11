@@ -4,17 +4,37 @@
 
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using CommunityToolkit.Mvvm.Messaging;
+using Microsoft.CmdPal.UI.ViewModels.Messages;
+using Microsoft.CmdPal.UI.ViewModels.Services;
 using Microsoft.CmdPal.UI.ViewModels.Settings;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.CommandPalette.Extensions.Toolkit;
 
 namespace Microsoft.CmdPal.UI.ViewModels;
 
 public partial class SettingsViewModel : INotifyPropertyChanged
 {
+    private static readonly List<TimeSpan> AutoGoHomeIntervals =
+    [
+        Timeout.InfiniteTimeSpan,
+        TimeSpan.Zero,
+        TimeSpan.FromSeconds(10),
+        TimeSpan.FromSeconds(20),
+        TimeSpan.FromSeconds(30),
+        TimeSpan.FromSeconds(60),
+        TimeSpan.FromSeconds(90),
+        TimeSpan.FromSeconds(120),
+        TimeSpan.FromSeconds(180),
+    ];
+
     private readonly SettingsModel _settings;
-    private readonly IServiceProvider _serviceProvider;
+    private readonly TopLevelCommandManager _topLevelCommandManager;
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public AppearanceSettingsViewModel Appearance { get; }
+
+    public DockAppearanceSettingsViewModel DockAppearance { get; }
 
     public HotkeySettings? Hotkey
     {
@@ -38,22 +58,22 @@ public partial class SettingsViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool AllowExternalReload
+    {
+        get => _settings.AllowExternalReload;
+        set
+        {
+            _settings.AllowExternalReload = value;
+            Save();
+        }
+    }
+
     public bool ShowAppDetails
     {
         get => _settings.ShowAppDetails;
         set
         {
             _settings.ShowAppDetails = value;
-            Save();
-        }
-    }
-
-    public bool HotkeyGoesHome
-    {
-        get => _settings.HotkeyGoesHome;
-        set
-        {
-            _settings.HotkeyGoesHome = value;
             Save();
         }
     }
@@ -88,6 +108,16 @@ public partial class SettingsViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool KeepPreviousQuery
+    {
+        get => _settings.KeepPreviousQuery;
+        set
+        {
+            _settings.KeepPreviousQuery = value;
+            Save();
+        }
+    }
+
     public int MonitorPositionIndex
     {
         get => (int)_settings.SummonOn;
@@ -118,30 +148,167 @@ public partial class SettingsViewModel : INotifyPropertyChanged
         }
     }
 
-    public ObservableCollection<ProviderSettingsViewModel> CommandProviders { get; } = [];
+    public bool DisableAnimations
+    {
+        get => _settings.DisableAnimations;
+        set
+        {
+            _settings.DisableAnimations = value;
+            Save();
+        }
+    }
 
-    public SettingsViewModel(SettingsModel settings, IServiceProvider serviceProvider, TaskScheduler scheduler)
+    public int AutoGoBackIntervalIndex
+    {
+        get
+        {
+            var index = AutoGoHomeIntervals.IndexOf(_settings.AutoGoHomeInterval);
+            return index >= 0 ? index : 0;
+        }
+
+        set
+        {
+            if (value >= 0 && value < AutoGoHomeIntervals.Count)
+            {
+                _settings.AutoGoHomeInterval = AutoGoHomeIntervals[value];
+            }
+
+            Save();
+        }
+    }
+
+    public int EscapeKeyBehaviorIndex
+    {
+        get => (int)_settings.EscapeKeyBehaviorSetting;
+        set
+        {
+            _settings.EscapeKeyBehaviorSetting = (EscapeKeyBehavior)value;
+            Save();
+        }
+    }
+
+    public DockSide Dock_Side
+    {
+        get => _settings.DockSettings.Side;
+        set
+        {
+            _settings.DockSettings.Side = value;
+            Save();
+        }
+    }
+
+    public DockSize Dock_DockSize
+    {
+        get => _settings.DockSettings.DockSize;
+        set
+        {
+            _settings.DockSettings.DockSize = value;
+            Save();
+        }
+    }
+
+    public DockBackdrop Dock_Backdrop
+    {
+        get => _settings.DockSettings.Backdrop;
+        set
+        {
+            _settings.DockSettings.Backdrop = value;
+            Save();
+        }
+    }
+
+    public bool Dock_ShowLabels
+    {
+        get => _settings.DockSettings.ShowLabels;
+        set
+        {
+            _settings.DockSettings.ShowLabels = value;
+            Save();
+        }
+    }
+
+    public bool EnableDock
+    {
+        get => _settings.EnableDock;
+        set
+        {
+            _settings.EnableDock = value;
+            Save();
+            WeakReferenceMessenger.Default.Send(new ShowHideDockMessage(value));
+            WeakReferenceMessenger.Default.Send(new ReloadCommandsMessage()); // TODO! we need to update the MoreCommands of all top level items, but we don't _really_ want to reload
+        }
+    }
+
+    public ObservableCollection<ProviderSettingsViewModel> CommandProviders { get; } = new();
+
+    public ObservableCollection<FallbackSettingsViewModel> FallbackRankings { get; set; } = new();
+
+    public SettingsExtensionsViewModel Extensions { get; }
+
+    public SettingsViewModel(SettingsModel settings, TopLevelCommandManager topLevelCommandManager, TaskScheduler scheduler, IThemeService themeService)
     {
         _settings = settings;
-        _serviceProvider = serviceProvider;
+        _topLevelCommandManager = topLevelCommandManager;
+
+        Appearance = new AppearanceSettingsViewModel(themeService, _settings);
+        DockAppearance = new DockAppearanceSettingsViewModel(themeService, _settings);
 
         var activeProviders = GetCommandProviders();
         var allProviderSettings = _settings.ProviderSettings;
+
+        var fallbacks = new List<FallbackSettingsViewModel>();
+        var currentRankings = _settings.FallbackRanks;
+        var needsSave = false;
 
         foreach (var item in activeProviders)
         {
             var providerSettings = settings.GetProviderSettings(item);
 
-            var settingsModel = new ProviderSettingsViewModel(item, providerSettings, _serviceProvider);
+            var settingsModel = new ProviderSettingsViewModel(item, providerSettings, _settings);
             CommandProviders.Add(settingsModel);
+
+            fallbacks.AddRange(settingsModel.FallbackCommands);
+        }
+
+        var fallbackRankings = new List<Scored<FallbackSettingsViewModel>>(fallbacks.Count);
+        foreach (var fallback in fallbacks)
+        {
+            var index = currentRankings.IndexOf(fallback.Id);
+            var score = fallbacks.Count;
+
+            if (index >= 0)
+            {
+                score = index;
+            }
+
+            fallbackRankings.Add(new Scored<FallbackSettingsViewModel>() { Item = fallback, Score = score });
+
+            if (index == -1)
+            {
+                needsSave = true;
+            }
+        }
+
+        FallbackRankings = new ObservableCollection<FallbackSettingsViewModel>(fallbackRankings.OrderBy(o => o.Score).Select(fr => fr.Item));
+        Extensions = new SettingsExtensionsViewModel(CommandProviders, scheduler);
+
+        if (needsSave)
+        {
+            ApplyFallbackSort();
         }
     }
 
     private IEnumerable<CommandProviderWrapper> GetCommandProviders()
     {
-        var manager = _serviceProvider.GetService<TopLevelCommandManager>()!;
-        var allProviders = manager.CommandProviders;
+        var allProviders = _topLevelCommandManager.CommandProviders;
         return allProviders;
+    }
+
+    public void ApplyFallbackSort()
+    {
+        _settings.FallbackRanks = FallbackRankings.Select(s => s.Id).ToArray();
+        Save();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FallbackRankings)));
     }
 
     private void Save() => SettingsModel.SaveSettings(_settings);

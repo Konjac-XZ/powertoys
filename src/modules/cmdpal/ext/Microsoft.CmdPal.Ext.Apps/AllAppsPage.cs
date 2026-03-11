@@ -2,9 +2,9 @@
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using ManagedCommon;
@@ -18,12 +18,20 @@ namespace Microsoft.CmdPal.Ext.Apps;
 public sealed partial class AllAppsPage : ListPage
 {
     private readonly Lock _listLock = new();
-    private AppListItem[] allAppsSection = [];
+    private readonly IAppCache _appCache;
+
+    private AppListItem[] allAppListItems = [];
 
     public AllAppsPage()
+        : this(AppCache.Instance.Value)
     {
+    }
+
+    public AllAppsPage(IAppCache appCache)
+    {
+        _appCache = appCache ?? throw new ArgumentNullException(nameof(appCache));
         this.Name = Resources.all_apps;
-        this.Icon = IconHelpers.FromRelativePath("Assets\\AllApps.svg");
+        this.Icon = Icons.AllAppsIcon;
         this.ShowDetails = true;
         this.IsLoading = true;
         this.PlaceholderText = Resources.search_installed_apps_placeholder;
@@ -39,87 +47,57 @@ public sealed partial class AllAppsPage : ListPage
 
     public override IListItem[] GetItems()
     {
-        if (allAppsSection.Length == 0 || AppCache.Instance.Value.ShouldReload())
-        {
-            lock (_listLock)
-            {
-                BuildListItems();
-            }
-        }
+        // Build or update the list if needed
+        BuildListItems();
 
-        return allAppsSection;
+        return allAppListItems;
     }
 
     private void BuildListItems()
     {
-        this.IsLoading = true;
-
-        Stopwatch stopwatch = new();
-        stopwatch.Start();
-
-        var apps = GetPrograms();
-
-        this.allAppsSection = apps
-                        .Select((app) => new AppListItem(app, true))
-                        .ToArray();
-
-        this.IsLoading = false;
-
-        AppCache.Instance.Value.ResetReloadFlag();
-
-        stopwatch.Stop();
-        Logger.LogTrace($"{nameof(AllAppsPage)}.{nameof(BuildListItems)} took: {stopwatch.ElapsedMilliseconds} ms");
-    }
-
-    internal List<AppItem> GetPrograms()
-    {
-        var uwpResults = AppCache.Instance.Value.UWPs
-            .Where((application) => application.Enabled)
-            .Select(UwpToAppItem);
-
-        var win32Results = AppCache.Instance.Value.Win32s
-            .Where((application) => application.Enabled && application.Valid)
-            .Select(app =>
-            {
-                var icoPath = string.IsNullOrEmpty(app.IcoPath) ?
-                    (app.AppType == Win32Program.ApplicationType.InternetShortcutApplication ?
-                        app.IcoPath :
-                        app.FullPath) :
-                    app.IcoPath;
-
-                // icoPath = icoPath.EndsWith(".lnk", System.StringComparison.InvariantCultureIgnoreCase) ? (icoPath + ",0") : icoPath;
-                icoPath = icoPath.EndsWith(".lnk", System.StringComparison.InvariantCultureIgnoreCase) ?
-                    app.FullPath :
-                    icoPath;
-                return new AppItem()
-                {
-                    Name = app.Name,
-                    Subtitle = app.Description,
-                    Type = app.Type(),
-                    IcoPath = icoPath,
-                    ExePath = !string.IsNullOrEmpty(app.LnkFilePath) ? app.LnkFilePath : app.FullPath,
-                    DirPath = app.Location,
-                    Commands = app.GetCommands(),
-                };
-            });
-
-        return uwpResults.Concat(win32Results).OrderBy(app => app.Name).ToList();
-    }
-
-    private AppItem UwpToAppItem(UWPApplication app)
-    {
-        var iconPath = app.LogoType != LogoType.Error ? app.LogoPath : string.Empty;
-        var item = new AppItem()
+        if (allAppListItems.Length == 0 || _appCache.ShouldReload())
         {
-            Name = app.Name,
-            Subtitle = app.Description,
-            Type = UWPApplication.Type(),
-            IcoPath = iconPath,
-            DirPath = app.Location,
-            UserModelId = app.UserModelId,
-            IsPackaged = true,
-            Commands = app.GetCommands(),
-        };
-        return item;
+            lock (_listLock)
+            {
+                this.IsLoading = true;
+
+                Stopwatch stopwatch = new();
+                stopwatch.Start();
+
+                this.allAppListItems = GetPrograms();
+
+                this.IsLoading = false;
+
+                _appCache.ResetReloadFlag();
+
+                stopwatch.Stop();
+                Logger.LogTrace($"{nameof(AllAppsPage)}.{nameof(BuildListItems)} took: {stopwatch.ElapsedMilliseconds} ms");
+            }
+        }
+    }
+
+    private AppListItem[] GetPrograms()
+    {
+        var items = new List<AppListItem>();
+
+        foreach (var uwpApp in _appCache.UWPs)
+        {
+            if (uwpApp.Enabled)
+            {
+                items.Add(new AppListItem(uwpApp.ToAppItem(), true));
+            }
+        }
+
+        foreach (var win32App in _appCache.Win32s)
+        {
+            if (win32App.Enabled && win32App.Valid)
+            {
+                items.Add(new AppListItem(win32App.ToAppItem(), true));
+            }
+        }
+
+        items.Sort((a, b) => string.Compare(a.Title, b.Title, StringComparison.Ordinal));
+
+        return [.. items];
     }
 }

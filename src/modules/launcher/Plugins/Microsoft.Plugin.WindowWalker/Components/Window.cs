@@ -228,7 +228,7 @@ namespace Microsoft.Plugin.WindowWalker.Components
             {
                 if (!NativeMethods.ShowWindow(Hwnd, ShowWindowCommand.Restore))
                 {
-                    // ShowWindow doesn't work if the process is running elevated: fallback to SendMessage
+                    // ShowWindow doesn't work if the process is running elevated: fall back to SendMessage
                     _ = NativeMethods.SendMessage(Hwnd, Win32Constants.WM_SYSCOMMAND, Win32Constants.SC_RESTORE);
                 }
             }
@@ -404,7 +404,11 @@ namespace Microsoft.Plugin.WindowWalker.Components
                                 var childProcessName = WindowProcess.GetProcessNameFromProcessID(childProcessId);
 
                                 // Update process info in cache
-                                _handlesToProcessCache[hWindow].UpdateProcessInfo(childProcessId, childThreadId, childProcessName);
+                                lock (_handlesToProcessCache)
+                                {
+                                    _handlesToProcessCache[hWindow].UpdateProcessInfo(childProcessId, childThreadId, childProcessName);
+                                }
+
                                 return false;
                             }
                             else

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation
+// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
@@ -28,7 +28,7 @@ public partial class TagViewModel(ITag _tag, WeakReference<IPageContext> context
     public override void InitializeProperties()
     {
         var model = _tagModel.Unsafe;
-        if (model == null)
+        if (model is null)
         {
             return;
         }

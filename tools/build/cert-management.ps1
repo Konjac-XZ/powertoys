@@ -61,8 +61,18 @@ function ImportAndVerifyCertificate {
     try {
         $null = Import-Certificate -FilePath $cerPath -CertStoreLocation $storePath -ErrorAction Stop
     } catch {
-        Write-Warning "Failed to import certificate to $storePath : $_"
-        return $false
+        if ($_.Exception.Message -match "Access is denied" -or $_.Exception.InnerException.Message -match "Access is denied") {
+            Write-Warning "Access denied to $storePath. Attempting to import with admin privileges..."
+            try {
+                Start-Process powershell -ArgumentList "-NoProfile", "-Command", "& { Import-Certificate -FilePath '$cerPath' -CertStoreLocation '$storePath' }" -Verb RunAs -Wait
+            } catch {
+                Write-Warning "Failed to request admin privileges: $_"
+                return $false
+            }
+        } else {
+            Write-Warning "Failed to import certificate to $storePath : $_"
+            return $false
+        }
     }
 
     $imported = Get-ChildItem -Path $storePath | Where-Object { $_.Thumbprint -eq $thumbprint }
@@ -151,5 +161,38 @@ function Export-CertificateFiles {
 
     if (-not $CerPath -and -not $PfxPath) {
         Write-Warning "No output path specified. Nothing was exported."
+    }
+}
+
+# Main execution when script is run directly
+if ($MyInvocation.InvocationName -ne '.') {
+    Write-Host "=== PowerToys Certificate Management ===" -ForegroundColor Green
+    Write-Host ""
+    
+    # Ensure certificate exists and is trusted
+    Write-Host "Checking for existing certificate or creating new one..." -ForegroundColor Yellow
+    $cert = EnsureCertificate
+    
+    if ($cert) {
+        # Export the certificate to a .cer file
+        $exportPath = Join-Path (Get-Location) "PowerToys-CodeSigning.cer"
+        Write-Host ""
+        Write-Host "Exporting certificate..." -ForegroundColor Yellow
+        Export-CertificateFiles -Certificate $cert -CerPath $exportPath
+        
+        Write-Host ""
+        Write-Host "=== IMPORTANT NOTES ===" -ForegroundColor Red
+        Write-Host "The certificate has been exported to: $exportPath" -ForegroundColor White
+        Write-Host ""
+        Write-Host "To use this certificate for code signing, you need to:" -ForegroundColor Yellow
+        Write-Host "1. Import this certificate into 'Trusted People' store" -ForegroundColor White
+        Write-Host "2. Import this certificate into 'Trusted Root Certification Authorities' store" -ForegroundColor White
+        Write-Host "Certificate Details:" -ForegroundColor Green
+        Write-Host "Subject: $($cert.Subject)" -ForegroundColor White
+        Write-Host "Thumbprint: $($cert.Thumbprint)" -ForegroundColor White
+        Write-Host "Valid Until: $($cert.NotAfter)" -ForegroundColor White
+    } else {
+        Write-Error "Failed to create or find certificate. Please check the error messages above."
+        exit 1
     }
 }

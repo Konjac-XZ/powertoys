@@ -11,6 +11,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.Windows.ApplicationModel.Resources;
 using Windows.System;
 
 namespace Microsoft.CmdPal.UI.Controls;
@@ -36,16 +37,18 @@ public sealed partial class ShortcutControl : UserControl, IDisposable, IRecipie
 
     public static readonly DependencyProperty AllowDisableProperty = DependencyProperty.Register("AllowDisable", typeof(bool), typeof(ShortcutControl), new PropertyMetadata(false, OnAllowDisableChanged));
 
+    private static ResourceLoader resourceLoader = Microsoft.CmdPal.UI.Helpers.ResourceLoaderInstance.ResourceLoader;
+
     private static void OnAllowDisableChanged(DependencyObject d, DependencyPropertyChangedEventArgs? e)
     {
         var me = d as ShortcutControl;
-        if (me == null)
+        if (me is null)
         {
             return;
         }
 
         var description = me.c?.FindDescendant<TextBlock>();
-        if (description == null)
+        if (description is null)
         {
             return;
         }
@@ -96,8 +99,7 @@ public sealed partial class ShortcutControl : UserControl, IDisposable, IRecipie
             {
                 hotkeySettings = value;
                 SetValue(HotkeySettingsProperty, value);
-                PreviewKeysControl.ItemsSource = HotkeySettings?.GetKeysList() ?? new List<object>();
-                AutomationProperties.SetHelpText(EditButton, HotkeySettings?.ToString() ?? string.Empty);
+                SetKeys();
                 c.Keys = HotkeySettings?.GetKeysList() ?? new List<object>();
             }
         }
@@ -107,8 +109,6 @@ public sealed partial class ShortcutControl : UserControl, IDisposable, IRecipie
     {
         InitializeComponent();
         internalSettings = new HotkeySettings();
-
-        var resourceLoader = Microsoft.CmdPal.UI.Helpers.ResourceLoaderInstance.ResourceLoader;
 
         // We create the Dialog in C# because doing it in XAML is giving WinUI/XAML Island bugs when using dark theme.
         shortcutDialog = new ContentDialog
@@ -421,23 +421,20 @@ public sealed partial class ShortcutControl : UserControl, IDisposable, IRecipie
         hotkeySettings = null;
 
         SetValue(HotkeySettingsProperty, hotkeySettings);
-        PreviewKeysControl.ItemsSource = HotkeySettings?.GetKeysList() ?? new List<object>();
+        SetKeys();
 
         lastValidSettings = hotkeySettings;
-
-        AutomationProperties.SetHelpText(EditButton, HotkeySettings?.ToString() ?? string.Empty);
         shortcutDialog.Hide();
     }
 
     private void ShortcutDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
     {
-        if (lastValidSettings != null && ComboIsValid(lastValidSettings))
+        if (lastValidSettings is not null && ComboIsValid(lastValidSettings))
         {
             HotkeySettings = lastValidSettings with { };
         }
 
-        PreviewKeysControl.ItemsSource = hotkeySettings?.GetKeysList() ?? new List<object>();
-        AutomationProperties.SetHelpText(EditButton, HotkeySettings?.ToString() ?? string.Empty);
+        SetKeys();
         shortcutDialog.Hide();
     }
 
@@ -450,15 +447,13 @@ public sealed partial class ShortcutControl : UserControl, IDisposable, IRecipie
 
         var empty = new HotkeySettings();
         HotkeySettings = empty;
-
-        PreviewKeysControl.ItemsSource = HotkeySettings.GetKeysList();
-        AutomationProperties.SetHelpText(EditButton, HotkeySettings.ToString());
+        SetKeys();
         shortcutDialog.Hide();
     }
 
     private static bool ComboIsValid(HotkeySettings? settings)
     {
-        return settings != null && (settings.IsValid() || settings.IsEmpty());
+        return settings is not null && (settings.IsValid() || settings.IsEmpty());
     }
 
     public void Receive(WindowActivatedEventArgs message) => DoWindowActivated(message);
@@ -466,12 +461,12 @@ public sealed partial class ShortcutControl : UserControl, IDisposable, IRecipie
     private void DoWindowActivated(WindowActivatedEventArgs args)
     {
         args.Handled = true;
-        if (args.WindowActivationState != WindowActivationState.Deactivated && (hook == null || hook.GetDisposedState() == true))
+        if (args.WindowActivationState != WindowActivationState.Deactivated && (hook is null || hook.GetDisposedState() == true))
         {
             // If the PT settings window gets focussed/activated again, we enable the keyboard hook to catch the keyboard input.
             hook = new HotkeySettingsControlHook(Hotkey_KeyDown, Hotkey_KeyUp, Hotkey_IsActive, FilterAccessibleKeyboardEvents);
         }
-        else if (args.WindowActivationState == WindowActivationState.Deactivated && hook != null && hook.GetDisposedState() == false)
+        else if (args.WindowActivationState == WindowActivationState.Deactivated && hook is not null && hook.GetDisposedState() == false)
         {
             // If the PT settings window lost focus/activation, we disable the keyboard hook to allow keyboard input on other windows.
             hook.Dispose();
@@ -490,7 +485,7 @@ public sealed partial class ShortcutControl : UserControl, IDisposable, IRecipie
         {
             if (disposing)
             {
-                if (hook != null)
+                if (hook is not null)
                 {
                     hook.Dispose();
                 }
@@ -507,5 +502,24 @@ public sealed partial class ShortcutControl : UserControl, IDisposable, IRecipie
         // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
         Dispose(disposing: true);
         GC.SuppressFinalize(this);
+    }
+
+    private void SetKeys()
+    {
+        var keys = HotkeySettings?.GetKeysList();
+
+        if (keys != null && keys.Count > 0)
+        {
+            VisualStateManager.GoToState(this, "Configured", true);
+            PreviewKeysControl.ItemsSource = keys;
+#pragma warning disable CS8602 // Dereference of a possibly null reference.
+            AutomationProperties.SetHelpText(EditButton, HotkeySettings.ToString());
+#pragma warning restore CS8602 // Dereference of a possibly null reference.
+        }
+        else
+        {
+            VisualStateManager.GoToState(this, "Normal", true);
+            AutomationProperties.SetHelpText(EditButton, resourceLoader.GetString("ConfigureShortcut"));
+        }
     }
 }

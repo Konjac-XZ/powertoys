@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation
+// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
@@ -8,10 +8,11 @@ namespace Microsoft.CmdPal.UI.ViewModels;
 
 public partial class LoadingPageViewModel : PageViewModel
 {
-    public LoadingPageViewModel(IPage? model, TaskScheduler scheduler)
-        : base(model, scheduler, CommandPaletteHost.Instance)
+    public LoadingPageViewModel(IPage? model, TaskScheduler scheduler, AppExtensionHost host)
+        : base(model, scheduler, host, CommandProviderContext.Empty)
     {
         ModelIsLoading = true;
+        HasBackButton = false;
         IsInitialized = false;
     }
 }

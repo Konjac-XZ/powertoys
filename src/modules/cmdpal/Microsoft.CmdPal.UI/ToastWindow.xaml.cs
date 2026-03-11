@@ -10,8 +10,6 @@ using Microsoft.CmdPal.UI.ViewModels;
 using Microsoft.CmdPal.UI.ViewModels.Messages;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
-using Microsoft.UI.Xaml;
-using Windows.Graphics;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Gdi;
@@ -26,21 +24,21 @@ public sealed partial class ToastWindow : WindowEx,
     IRecipient<QuitMessage>
 {
     private readonly HWND _hwnd;
+    private readonly DispatcherQueueTimer _debounceTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();
+    private readonly HiddenOwnerWindowBehavior _hiddenOwnerWindowBehavior = new();
 
     public ToastViewModel ViewModel { get; } = new();
-
-    private readonly DispatcherQueueTimer _debounceTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();
 
     public ToastWindow()
     {
         this.InitializeComponent();
         AppWindow.Hide();
-        AppWindow.IsShownInSwitchers = false;
         ExtendsContentIntoTitleBar = true;
         AppWindow.SetPresenter(AppWindowPresenterKind.CompactOverlay);
         this.SetIcon();
         AppWindow.Title = RS_.GetString("ToastWindowTitle");
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Collapsed;
+        _hiddenOwnerWindowBehavior.ShowInTaskbar(this, false);
 
         _hwnd = new HWND(WinRT.Interop.WindowNative.GetWindowHandle(this).ToInt32());
         PInvoke.EnableWindow(_hwnd, false);

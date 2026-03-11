@@ -11,13 +11,11 @@ namespace Microsoft.CmdPal.Ext.WindowsServices;
 public partial class WindowsServicesCommandsProvider : CommandProvider
 {
     // For giggles, "%windir%\\system32\\filemgmt.dll" also _just works_.
-    public static IconInfo ServicesIcon { get; } = IconHelpers.FromRelativePath("Assets\\Services.svg");
-
     public WindowsServicesCommandsProvider()
     {
         Id = "Windows.Services";
         DisplayName = Resources.WindowsServicesProvider_DisplayName;
-        Icon = ServicesIcon;
+        Icon = Icons.ServicesIcon;
     }
 
     public override ICommandItem[] TopLevelCommands()
@@ -25,8 +23,7 @@ public partial class WindowsServicesCommandsProvider : CommandProvider
         return [
             new CommandItem(new ServicesListPage())
             {
-                Title = "Windows Services",
-                Subtitle = "Manage Windows Services",
+                Title = Resources.ManageWindowsServicesCommand_Title,
             }
         ];
     }

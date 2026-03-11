@@ -1,8 +1,9 @@
-﻿// Copyright (c) Microsoft Corporation
+// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using ManagedCommon;
+using Microsoft.CmdPal.Common;
+using Microsoft.CmdPal.UI.ViewModels;
 using Microsoft.CmdPal.UI.ViewModels.Models;
 using Microsoft.CommandPalette.Extensions;
 
@@ -17,20 +18,20 @@ public partial class CommandSettingsViewModel(ICommandSettings? _unsafeSettings,
     public bool Initialized { get; private set; }
 
     public bool HasSettings =>
-        _model.Unsafe != null && // We have a settings model AND
-        (!Initialized || SettingsPage != null); // we weren't initialized, OR we were, and we do have a settings page
+        _model.Unsafe is not null && // We have a settings model AND
+        (!Initialized || SettingsPage is not null); // we weren't initialized, OR we were, and we do have a settings page
 
     private void UnsafeInitializeProperties()
     {
         var model = _model.Unsafe;
-        if (model == null)
+        if (model is null)
         {
             return;
         }
 
-        if (model.SettingsPage is IContentPage page)
+        if (model.SettingsPage is not null)
         {
-            SettingsPage = new(page, mainThread, provider.ExtensionHost);
+            SettingsPage = new CommandPaletteContentPageViewModel(model.SettingsPage, mainThread, provider.ExtensionHost, provider.GetProviderContext());
             SettingsPage.InitializeProperties();
         }
     }
@@ -43,7 +44,7 @@ public partial class CommandSettingsViewModel(ICommandSettings? _unsafeSettings,
         }
         catch (Exception ex)
         {
-            Logger.LogError($"Failed to load settings page", ex: ex);
+            CoreLogger.LogError($"Failed to load settings page", ex: ex);
         }
 
         Initialized = true;

@@ -6,11 +6,9 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using ManagedCommon;
-using Microsoft.PowerToys.Settings.UI.Flyout;
 using Microsoft.PowerToys.Settings.UI.Helpers;
 using Microsoft.PowerToys.Settings.UI.Library;
 using Microsoft.PowerToys.Settings.UI.ViewModels;
-using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Data.Json;
@@ -20,7 +18,7 @@ namespace Microsoft.PowerToys.Settings.UI.Views
     /// <summary>
     /// General Settings Page.
     /// </summary>
-    public sealed partial class GeneralPage : Page, IRefreshablePage
+    public sealed partial class GeneralPage : NavigablePage, IRefreshablePage
     {
         private static DateTime OkToHideBackupAndRestoreMessageTime { get; set; }
 
@@ -39,7 +37,7 @@ namespace Microsoft.PowerToys.Settings.UI.Views
 
             // Load string resources
             var loader = Helpers.ResourceLoaderInstance.ResourceLoader;
-            var settingsUtils = new SettingsUtils();
+            var settingsUtils = SettingsUtils.Default;
 
             Action stateUpdatingAction = () =>
             {
@@ -95,6 +93,8 @@ namespace Microsoft.PowerToys.Settings.UI.Views
             CheckBugReportStatus();
 
             doRefreshBackupRestoreStatus(100);
+
+            this.Loaded += (s, e) => ViewModel.OnPageLoaded();
         }
 
         private void OpenColorsSettings_Click(object sender, RoutedEventArgs e)
@@ -174,24 +174,10 @@ namespace Microsoft.PowerToys.Settings.UI.Views
             await Task.Run(ViewModel.ViewDiagnosticData);
         }
 
-        private void ExitPTItem_Tapped(object sender, RoutedEventArgs e)
-        {
-            const string ptTrayIconWindowClass = "PToyTrayIconWindow"; // Defined in runner/tray_icon.h
-            const nuint ID_EXIT_MENU_COMMAND = 40001;                  // Generated resource from runner/runner.base.rc
-
-            // Exit the XAML application
-            Application.Current.Exit();
-
-            // Invoke the exit command from the tray icon
-            IntPtr hWnd = NativeMethods.FindWindow(ptTrayIconWindowClass, ptTrayIconWindowClass);
-            NativeMethods.SendMessage(hWnd, NativeMethods.WM_COMMAND, ID_EXIT_MENU_COMMAND, 0);
-        }
-
         private void BugReportToolClicked(object sender, RoutedEventArgs e)
         {
             // Start bug report
-            var launchPage = new LaunchPage();
-            launchPage.ReportBugBtn_Click(sender, e);
+            ShellPage.SendDefaultIPCMessage("{\"bugreport\": 0 }");
 
             ViewModel.IsBugReportRunning = true;
 
@@ -230,6 +216,18 @@ namespace Microsoft.PowerToys.Settings.UI.Views
             if (ShellPage.ShellHandler?.IPCResponseHandleList != null)
             {
                 ShellPage.ShellHandler.IPCResponseHandleList.Remove(HandleBugReportStatusResponse);
+            }
+        }
+
+        private void ShowSystemTrayIcon_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (sender is ToggleSwitch toggleSwitch)
+            {
+                var shellViewModel = ShellPage.ShellHandler?.ViewModel;
+                if (shellViewModel != null)
+                {
+                    shellViewModel.ShowCloseMenu = !toggleSwitch.IsOn;
+                }
             }
         }
     }

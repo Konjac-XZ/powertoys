@@ -143,7 +143,7 @@ namespace MouseWithoutBorders.Class
                         return;
                     }
 
-                    string myDesktop = Common.GetMyDesktop();
+                    string myDesktop = WinAPI.GetMyDesktop();
 
                     if (firstArg.Equals("winlogon", StringComparison.OrdinalIgnoreCase))
                     {
@@ -229,13 +229,14 @@ namespace MouseWithoutBorders.Class
                 if (!Common.RunOnLogonDesktop)
                 {
                     StartSettingSyncThread();
+                    CommandEventHandler.StartListening();
                 }
 
                 Application.EnableVisualStyles();
                 _ = Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
                 Application.SetCompatibleTextRenderingDefault(false);
 
-                Common.Init();
+                InitAndCleanup.Init();
                 Core.Helper.WndProcCounter++;
 
                 var formScreen = new FrmScreen();
@@ -305,8 +306,8 @@ namespace MouseWithoutBorders.Class
 
                 MachineStuff.ClearComputerMatrix();
                 Setting.Values.MyKey = securityKey;
-                Common.MyKey = securityKey;
-                Common.MagicNumber = Common.Get24BitHash(Common.MyKey);
+                Encryption.MyKey = securityKey;
+                Encryption.MagicNumber = Encryption.Get24BitHash(Encryption.MyKey);
                 MachineStuff.MachineMatrix = new string[MachineStuff.MAX_MACHINE] { pcName.Trim().ToUpper(CultureInfo.CurrentCulture), Common.MachineName.Trim(), string.Empty, string.Empty };
 
                 string[] machines = MachineStuff.MachineMatrix;
@@ -314,7 +315,7 @@ namespace MouseWithoutBorders.Class
                 MachineStuff.UpdateMachinePoolStringSetting();
 
                 SocketStuff.InvalidKeyFound = false;
-                Common.ReopenSocketDueToReadError = true;
+                InitAndCleanup.ReopenSocketDueToReadError = true;
                 Common.ReopenSockets(true);
                 MachineStuff.SendMachineMatrix();
 
@@ -328,8 +329,8 @@ namespace MouseWithoutBorders.Class
 
                 Setting.Values.EasyMouse = (int)EasyMouseOption.Enable;
                 MachineStuff.ClearComputerMatrix();
-                Setting.Values.MyKey = Common.MyKey = Common.CreateRandomKey();
-                Common.GeneratedKey = true;
+                Setting.Values.MyKey = Encryption.MyKey = Encryption.CreateRandomKey();
+                Encryption.GeneratedKey = true;
 
                 Setting.Values.PauseInstantSaving = false;
                 Setting.Values.SaveSettings();
@@ -340,7 +341,7 @@ namespace MouseWithoutBorders.Class
             public void Reconnect()
             {
                 SocketStuff.InvalidKeyFound = false;
-                Common.ReopenSocketDueToReadError = true;
+                InitAndCleanup.ReopenSocketDueToReadError = true;
                 Common.ReopenSockets(true);
 
                 for (int i = 0; i < 10; i++)
@@ -397,7 +398,7 @@ namespace MouseWithoutBorders.Class
             using var asyncFlowControl = ExecutionContext.SuppressFlow();
 
             Common.InputCallbackThreadID = Thread.CurrentThread.ManagedThreadId;
-            while (!Common.InitDone)
+            while (!InitAndCleanup.InitDone)
             {
                 Thread.Sleep(100);
             }

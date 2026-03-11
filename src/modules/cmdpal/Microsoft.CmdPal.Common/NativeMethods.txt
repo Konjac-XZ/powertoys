@@ -9,3 +9,11 @@ GetWindowRect
 GetMonitorInfo
 SetWindowPos
 MonitorFromWindow
+
+SHOW_WINDOW_CMD
+ShellExecuteEx
+SEE_MASK_INVOKEIDLIST 
+
+GetFileAttributes
+FILE_FLAGS_AND_ATTRIBUTES
+INVALID_FILE_ATTRIBUTES

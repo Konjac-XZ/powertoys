@@ -3,41 +3,65 @@
 // See the LICENSE file in the project root for more information.
 
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.CmdPal.Common.Services;
 using Microsoft.CmdPal.UI.ViewModels.Messages;
 using Microsoft.CmdPal.UI.ViewModels.Properties;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Microsoft.CmdPal.UI.ViewModels;
 
-public partial class ProviderSettingsViewModel(
-    CommandProviderWrapper _provider,
-    ProviderSettings _providerSettings,
-    IServiceProvider _serviceProvider) : ObservableObject
+public partial class ProviderSettingsViewModel : ObservableObject
 {
-    private readonly SettingsModel _settings = _serviceProvider.GetService<SettingsModel>()!;
+    private static readonly IconInfoViewModel EmptyIcon = new(null);
+    private static readonly CompositeFormat ExtensionSubtextFormat = CompositeFormat.Parse(Resources.builtin_extension_subtext);
+    private static readonly CompositeFormat ExtensionSubtextWithFallbackFormat = CompositeFormat.Parse(Resources.builtin_extension_subtext_with_fallback);
+    private static readonly CompositeFormat ExtensionSubtextDisabledFormat = CompositeFormat.Parse(Resources.builtin_extension_subtext_disabled);
+
+    private readonly CommandProviderWrapper _provider;
+    private readonly ProviderSettings _providerSettings;
+    private readonly SettingsModel _settings;
     private readonly Lock _initializeSettingsLock = new();
+
     private Task? _initializeSettingsTask;
+
+    public ProviderSettingsViewModel(
+        CommandProviderWrapper provider,
+        ProviderSettings providerSettings,
+        SettingsModel settings)
+    {
+        _provider = provider;
+        _providerSettings = providerSettings;
+        _settings = settings;
+
+        LoadingSettings = _provider.Settings?.HasSettings ?? false;
+
+        BuildFallbackViewModels();
+    }
 
     public string DisplayName => _provider.DisplayName;
 
-    public string ExtensionName => _provider.Extension?.ExtensionDisplayName ?? "Built-in";
+    public string ExtensionName => _provider.Extension?.ExtensionDisplayName ?? Resources.builtin_extension_name;
 
-    public string ExtensionSubtext => IsEnabled ? $"{ExtensionName}, {TopLevelCommands.Count} commands" : Resources.builtin_disabled_extension;
+    public string ExtensionSubtext => IsEnabled ?
+        HasFallbackCommands ?
+            string.Format(CultureInfo.CurrentCulture, ExtensionSubtextWithFallbackFormat, ExtensionName, TopLevelCommands.Count, _provider.FallbackItems?.Length ?? 0) :
+            string.Format(CultureInfo.CurrentCulture, ExtensionSubtextFormat, ExtensionName, TopLevelCommands.Count) :
+        string.Format(CultureInfo.CurrentCulture, ExtensionSubtextDisabledFormat, ExtensionName, Resources.builtin_disabled_extension);
 
     [MemberNotNullWhen(true, nameof(Extension))]
-    public bool IsFromExtension => _provider.Extension != null;
+    public bool IsFromExtension => _provider.Extension is not null;
 
     public IExtensionWrapper? Extension => _provider.Extension;
 
     public string ExtensionVersion => IsFromExtension ? $"{Extension.Version.Major}.{Extension.Version.Minor}.{Extension.Version.Build}.{Extension.Version.Revision}" : string.Empty;
 
-    public IconInfoViewModel Icon => _provider.Icon;
+    public IconInfoViewModel Icon => IsEnabled ? _provider.Icon : EmptyIcon;
 
     [ObservableProperty]
-    public partial bool LoadingSettings { get; set; } = _provider.Settings?.HasSettings ?? false;
+    public partial bool LoadingSettings { get; set; }
 
     public bool IsEnabled
     {
@@ -51,6 +75,7 @@ public partial class ProviderSettingsViewModel(
                 WeakReferenceMessenger.Default.Send<ReloadCommandsMessage>(new());
                 OnPropertyChanged(nameof(IsEnabled));
                 OnPropertyChanged(nameof(ExtensionSubtext));
+                OnPropertyChanged(nameof(Icon));
             }
 
             if (value == true)
@@ -71,7 +96,7 @@ public partial class ProviderSettingsViewModel(
     {
         get
         {
-            if (_provider.Settings == null)
+            if (_provider.Settings is null)
             {
                 return false;
             }
@@ -95,7 +120,7 @@ public partial class ProviderSettingsViewModel(
     {
         get
         {
-            if (_provider.Settings == null)
+            if (_provider.Settings is null)
             {
                 return null;
             }
@@ -121,7 +146,7 @@ public partial class ProviderSettingsViewModel(
     {
         get
         {
-            if (field == null)
+            if (field is null)
             {
                 field = BuildTopLevelViewModels();
             }
@@ -139,11 +164,37 @@ public partial class ProviderSettingsViewModel(
         return [.. providersCommands];
     }
 
+    [field: AllowNull]
+    public List<FallbackSettingsViewModel> FallbackCommands { get; set; } = [];
+
+    public bool HasFallbackCommands => _provider.FallbackItems?.Length > 0;
+
+    private void BuildFallbackViewModels()
+    {
+        var thisProvider = _provider;
+        var providersFallbackCommands = thisProvider.FallbackItems;
+
+        List<FallbackSettingsViewModel> fallbackViewModels = new(providersFallbackCommands.Length);
+        foreach (var fallbackItem in providersFallbackCommands)
+        {
+            if (_providerSettings.FallbackCommands.TryGetValue(fallbackItem.Id, out var fallbackSettings))
+            {
+                fallbackViewModels.Add(new FallbackSettingsViewModel(fallbackItem, fallbackSettings, _settings, this));
+            }
+            else
+            {
+                fallbackViewModels.Add(new FallbackSettingsViewModel(fallbackItem, new(), _settings, this));
+            }
+        }
+
+        FallbackCommands = fallbackViewModels;
+    }
+
     private void Save() => SettingsModel.SaveSettings(_settings);
 
     private void InitializeSettingsPage()
     {
-        if (_provider.Settings == null)
+        if (_provider.Settings is null)
         {
             return;
         }

@@ -5,30 +5,26 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.ComponentModel.Design;
-using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.IO.Abstractions;
-using System.Linq;
-using System.Reflection;
 using System.Security;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using System.Windows.Input;
 using ManagedCommon;
 using Microsoft.CmdPal.Ext.Apps.Commands;
 using Microsoft.CmdPal.Ext.Apps.Properties;
 using Microsoft.CmdPal.Ext.Apps.Utils;
+using Microsoft.CommandPalette.Extensions;
 using Microsoft.CommandPalette.Extensions.Toolkit;
 using Microsoft.Win32;
+using Windows.System;
 
 namespace Microsoft.CmdPal.Ext.Apps.Programs;
 
 [Serializable]
 public class Win32Program : IProgram
 {
-    public static readonly Win32Program InvalidProgram = new Win32Program { Valid = false, Enabled = false };
+    public static readonly Win32Program InvalidProgram = new() { Valid = false, Enabled = false };
 
     private static readonly IFileSystem FileSystem = new FileSystem();
     private static readonly IPath Path = FileSystem.Path;
@@ -87,7 +83,7 @@ public class Win32Program : IProgram
     private const string ShortcutExtension = "lnk";
     private const string ApplicationReferenceExtension = "appref-ms";
     private const string InternetShortcutExtension = "url";
-    private static readonly HashSet<string> ExecutableApplicationExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "exe", "bat", "bin", "com", "cpl", "msc", "msi", "cmd", "ps1", "job", "msp", "mst", "sct", "ws", "wsh", "wsf" };
+    private static readonly HashSet<string> ExecutableApplicationExtensions = new(StringComparer.OrdinalIgnoreCase) { "exe", "bat", "bin", "com", "cpl", "msc", "msi", "cmd", "ps1", "job", "msp", "mst", "sct", "ws", "wsh", "wsf" };
 
     private const string ProxyWebApp = "_proxy.exe";
     private const string AppIdArgument = "--app-id";
@@ -173,7 +169,7 @@ public class Win32Program : IProgram
 
     public bool QueryEqualsNameForRunCommands(string query)
     {
-        if (query != null && AppType == ApplicationType.RunCommand)
+        if (query is not null && AppType == ApplicationType.RunCommand)
         {
             // Using OrdinalIgnoreCase since this is used internally
             if (!query.Equals(Name, StringComparison.OrdinalIgnoreCase) && !query.Equals(ExecutableName, StringComparison.OrdinalIgnoreCase))
@@ -185,27 +181,55 @@ public class Win32Program : IProgram
         return true;
     }
 
-    public List<CommandContextItem> GetCommands()
+    public List<IContextItem> GetCommands()
     {
-        List<CommandContextItem> commands = new List<CommandContextItem>();
+        List<IContextItem> commands = [];
 
         if (AppType != ApplicationType.InternetShortcutApplication && AppType != ApplicationType.Folder && AppType != ApplicationType.GenericFile)
         {
             commands.Add(new CommandContextItem(
-                    new RunAsAdminCommand(!string.IsNullOrEmpty(LnkFilePath) ? LnkFilePath : FullPath, ParentDirectory, false)));
+                    new RunAsAdminCommand(!string.IsNullOrEmpty(LnkFilePath) ? LnkFilePath : FullPath, ParentDirectory, false))
+            {
+                RequestedShortcut = KeyChords.RunAsAdministrator,
+            });
 
             commands.Add(new CommandContextItem(
-                    new RunAsUserCommand(!string.IsNullOrEmpty(LnkFilePath) ? LnkFilePath : FullPath, ParentDirectory)));
+                    new RunAsUserCommand(!string.IsNullOrEmpty(LnkFilePath) ? LnkFilePath : FullPath, ParentDirectory))
+            {
+                RequestedShortcut = KeyChords.RunAsDifferentUser,
+            });
         }
 
         commands.Add(new CommandContextItem(
-                    new CopyPathCommand(FullPath)));
+                    new CopyPathCommand(FullPath))
+        {
+            RequestedShortcut = KeyChords.CopyFilePath,
+        });
 
         commands.Add(new CommandContextItem(
-                    new OpenPathCommand(ParentDirectory)));
+                    new ShowFileInFolderCommand(!string.IsNullOrEmpty(LnkFilePath) ? LnkFilePath : FullPath)
+                    {
+                        Name = Resources.open_location,
+                    })
+        {
+            RequestedShortcut = KeyChords.OpenFileLocation,
+        });
 
         commands.Add(new CommandContextItem(
-                    new OpenInConsoleCommand(ParentDirectory)));
+                    new OpenInConsoleCommand(ParentDirectory))
+        {
+            RequestedShortcut = KeyChords.OpenInConsole,
+        });
+
+        if (AppType == ApplicationType.ShortcutApplication || AppType == ApplicationType.ApprefApplication || AppType == ApplicationType.Win32Application)
+        {
+            commands.Add(new CommandContextItem(
+                new UninstallApplicationConfirmation(this))
+            {
+                RequestedShortcut = KeyChordHelpers.FromModifiers(ctrl: true, shift: true, vkey: VirtualKey.Delete),
+                IsCritical = true,
+            });
+        }
 
         return commands;
     }
@@ -213,6 +237,12 @@ public class Win32Program : IProgram
     public override string ToString()
     {
         return ExecutableName;
+    }
+
+    public string GetAppIdentifier()
+    {
+        // Use a combination of name and path to create a unique identifier
+        return $"{Name}|{FullPath}";
     }
 
     private static Win32Program CreateWin32Program(string path)
@@ -254,7 +284,7 @@ public class Win32Program : IProgram
         }
     }
 
-    private static readonly Regex InternetShortcutURLPrefixes = new Regex(@"^steam:\/\/(rungameid|run|open)\/|^com\.epicgames\.launcher:\/\/apps\/", RegexOptions.Compiled);
+    private static readonly Regex InternetShortcutURLPrefixes = new(@"^steam:\/\/(rungameid|run|open)\/|^com\.epicgames\.launcher:\/\/apps\/", RegexOptions.Compiled);
 
     // This function filters Internet Shortcut programs
     private static Win32Program InternetShortcutProgram(string path)
@@ -379,9 +409,37 @@ public class Win32Program : IProgram
                         program.Description = info.FileDescription;
                     }
                 }
+
+                if (program.AppType is ApplicationType.GenericFile or ApplicationType.Folder)
+                {
+                    var includeNonAppsOnDesktop = AllAppsSettings.Instance.IncludeNonAppsOnDesktop;
+                    var includeNonAppsInStartMenu = AllAppsSettings.Instance.IncludeNonAppsInStartMenu;
+
+                    var lnk = program.LnkFilePath;
+                    if (!string.IsNullOrEmpty(lnk))
+                    {
+                        var isDesktop = StartsWithFolder(lnk, Environment.SpecialFolder.Desktop) ||
+                                        StartsWithFolder(lnk, Environment.SpecialFolder.CommonDesktopDirectory);
+
+                        var isStartMenu = StartsWithFolder(lnk, Environment.SpecialFolder.StartMenu) ||
+                                          StartsWithFolder(lnk, Environment.SpecialFolder.CommonStartMenu);
+
+                        if ((isDesktop && !includeNonAppsOnDesktop) || (isStartMenu && !includeNonAppsInStartMenu))
+                        {
+                            program.Enabled = false;
+                        }
+                    }
+                }
             }
 
             return program;
+
+            static bool StartsWithFolder(string path, Environment.SpecialFolder folder)
+            {
+                var folderPath = Environment.GetFolderPath(folder, Environment.SpecialFolderOption.DoNotVerify);
+                return !string.IsNullOrEmpty(folderPath)
+                       && path.StartsWith(folderPath, StringComparison.OrdinalIgnoreCase);
+            }
         }
         catch (System.IO.FileLoadException e)
         {
@@ -588,9 +646,24 @@ public class Win32Program : IProgram
     }
 
     private static IEnumerable<string> CustomProgramPaths(IEnumerable<ProgramSource> sources, IList<string> suffixes)
-        => sources?.Where(programSource => Directory.Exists(programSource.Location) && programSource.Enabled)
-            .SelectMany(programSource => ProgramPaths(programSource.Location, suffixes))
-            .ToList() ?? Enumerable.Empty<string>();
+    {
+        if (sources is not null)
+        {
+            var paths = new List<string>();
+
+            foreach (var programSource in sources)
+            {
+                if (Directory.Exists(programSource.Location) && programSource.Enabled)
+                {
+                    paths.AddRange(ProgramPaths(programSource.Location, suffixes));
+                }
+            }
+
+            return paths;
+        }
+
+        return [];
+    }
 
     // Function to obtain the list of applications, the locations of which have been added to the env variable PATH
     private static List<string> PathEnvironmentProgramPaths(IList<string> suffixes)
@@ -619,9 +692,15 @@ public class Win32Program : IProgram
     }
 
     private static List<string> IndexPath(IList<string> suffixes, List<string> indexLocations)
-            => indexLocations
-            .SelectMany(indexLocation => ProgramPaths(indexLocation, suffixes))
-            .ToList();
+    {
+        var paths = new List<string>();
+        foreach (var indexLocation in indexLocations)
+        {
+            paths.AddRange(ProgramPaths(indexLocation, suffixes));
+        }
+
+        return paths;
+    }
 
     private static List<string> StartMenuProgramPaths(IList<string> suffixes)
     {
@@ -649,7 +728,7 @@ public class Win32Program : IProgram
         var paths = new List<string>();
         using (var root = Registry.LocalMachine.OpenSubKey(appPaths))
         {
-            if (root != null)
+            if (root is not null)
             {
                 paths.AddRange(GetPathsFromRegistry(root));
             }
@@ -657,23 +736,57 @@ public class Win32Program : IProgram
 
         using (var root = Registry.CurrentUser.OpenSubKey(appPaths))
         {
-            if (root != null)
+            if (root is not null)
             {
                 paths.AddRange(GetPathsFromRegistry(root));
             }
         }
 
-        return paths
-            .Where(path => suffixes.Any(suffix => path.EndsWith(suffix, StringComparison.InvariantCultureIgnoreCase)))
-            .Select(ExpandEnvironmentVariables)
-            .Where(path => path is not null)
-            .ToList();
+        var returnedPaths = new List<string>();
+        foreach (var path in paths)
+        {
+            var matchesSuffix = false;
+            foreach (var suffix in suffixes)
+            {
+                if (path.EndsWith(suffix, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    matchesSuffix = true;
+                    break;
+                }
+            }
+
+            if (matchesSuffix)
+            {
+                var expandedPath = ExpandEnvironmentVariables(path);
+                if (expandedPath is not null)
+                {
+                    returnedPaths.Add(expandedPath);
+                }
+            }
+        }
+
+        return returnedPaths;
     }
 
     private static IEnumerable<string> GetPathsFromRegistry(RegistryKey root)
-        => root
-            .GetSubKeyNames()
-            .Select(x => GetPathFromRegistrySubkey(root, x));
+    {
+        var result = new List<string>();
+
+        // Get all subkey names
+        var subKeyNames = root.GetSubKeyNames();
+
+        // Process each subkey to extract the path
+        foreach (var subkeyName in subKeyNames)
+        {
+            var path = GetPathFromRegistrySubkey(root, subkeyName);
+            if (!string.IsNullOrEmpty(path))
+            {
+                result.Add(path);
+            }
+        }
+
+        return result;
+    }
 
     private static string GetPathFromRegistrySubkey(RegistryKey root, string subkey)
     {
@@ -682,7 +795,7 @@ public class Win32Program : IProgram
         {
             using (var key = root.OpenSubKey(subkey))
             {
-                if (key == null)
+                if (key is null)
                 {
                     return string.Empty;
                 }
@@ -720,17 +833,14 @@ public class Win32Program : IProgram
 
     private sealed class Win32ProgramEqualityComparer : IEqualityComparer<Win32Program>
     {
-        public static readonly Win32ProgramEqualityComparer Default = new Win32ProgramEqualityComparer();
+        public static readonly Win32ProgramEqualityComparer Default = new();
 
         public bool Equals(Win32Program? app1, Win32Program? app2)
         {
-            if (app1 == null && app2 == null)
-            {
-                return true;
-            }
-
-            return app1 != null
-                    && app2 != null
+            return app1 is null && app2 is null
+                ? true
+                : app1 is not null
+                    && app2 is not null
                     && (app1.Name?.ToUpperInvariant(), app1.ExecutableName?.ToUpperInvariant(), app1.FullPath?.ToUpperInvariant())
                     .Equals((app2.Name?.ToUpperInvariant(), app2.ExecutableName?.ToUpperInvariant(), app2.FullPath?.ToUpperInvariant()));
         }
@@ -740,7 +850,28 @@ public class Win32Program : IProgram
     }
 
     public static List<Win32Program> DeduplicatePrograms(IEnumerable<Win32Program> programs)
-        => new HashSet<Win32Program>(programs, Win32ProgramEqualityComparer.Default).ToList();
+    {
+        // Create a HashSet with the custom equality comparer to automatically deduplicate programs
+        var uniquePrograms = new HashSet<Win32Program>(Win32ProgramEqualityComparer.Default);
+
+        // Filter out invalid programs and add valid ones to the HashSet
+        foreach (var program in programs)
+        {
+            if (program?.Valid == true)
+            {
+                uniquePrograms.Add(program);
+            }
+        }
+
+        // Convert the HashSet to a List for return
+        var result = new List<Win32Program>(uniquePrograms.Count);
+        foreach (var program in uniquePrograms)
+        {
+            result.Add(program);
+        }
+
+        return result;
+    }
 
     private static Win32Program GetProgramFromPath(string path)
     {
@@ -827,7 +958,7 @@ public class Win32Program : IProgram
             var paths = new HashSet<string>(defaultHashsetSize);
             var runCommandPaths = new HashSet<string>(defaultHashsetSize);
 
-            // Parallelize multiple sources, and priority based on paths which most likely contain .lnks which are formatted
+            // Parallelize multiple sources, and priority based on paths which most likely contain .lnk files which are formatted
             var sources = new (bool IsEnabled, Func<IEnumerable<string>> GetPaths)[]
             {
                 (true, () => CustomProgramPaths(settings.ProgramSources, settings.ProgramSuffixes)),
@@ -856,8 +987,22 @@ public class Win32Program : IProgram
 
                 foreach (var path in source.GetPaths())
                 {
-                    if (disabledProgramsList.All(x => x.UniqueIdentifier != path) &&
-                        !ExecutableApplicationExtensions.Contains(Extension(path)))
+                    if (ExecutableApplicationExtensions.Contains(Extension(path)))
+                    {
+                        continue;
+                    }
+
+                    var isDisabled = false;
+                    foreach (var disabledProgram in disabledProgramsList)
+                    {
+                        if (disabledProgram.UniqueIdentifier == path)
+                        {
+                            isDisabled = true;
+                            break;
+                        }
+                    }
+
+                    if (!isDisabled)
                     {
                         pathBag.Add(path);
                     }
@@ -877,7 +1022,17 @@ public class Win32Program : IProgram
 
                 foreach (var path in source.GetPaths())
                 {
-                    if (disabledProgramsList.All(x => x.UniqueIdentifier != path))
+                    var isDisabled = false;
+                    foreach (var disabledProgram in disabledProgramsList)
+                    {
+                        if (disabledProgram.UniqueIdentifier == path)
+                        {
+                            isDisabled = true;
+                            break;
+                        }
+                    }
+
+                    if (!isDisabled)
                     {
                         runCommandPathBag.Add(path);
                     }
@@ -890,7 +1045,7 @@ public class Win32Program : IProgram
             Parallel.ForEach(paths, source =>
             {
                 var program = GetProgramFromPath(source);
-                if (program != null)
+                if (program is not null)
                 {
                     programsList.Add(program);
                 }
@@ -900,21 +1055,42 @@ public class Win32Program : IProgram
             Parallel.ForEach(runCommandPaths, source =>
             {
                 var program = GetRunCommandProgramFromPath(source);
-                if (program != null)
+                if (program is not null)
                 {
                     runCommandProgramsList.Add(program);
                 }
             });
 
-            var programs = programsList.ToList();
-            var runCommandPrograms = runCommandProgramsList.ToList();
-
-            return DeduplicatePrograms(programs.Concat(runCommandPrograms).Where(program => program?.Valid == true));
+            List<Win32Program> allPrograms = [.. programsList, .. runCommandProgramsList];
+            return DeduplicatePrograms(allPrograms);
         }
         catch (Exception e)
         {
             Logger.LogError(e.Message);
             return Array.Empty<Win32Program>();
         }
+    }
+
+    internal AppItem ToAppItem()
+    {
+        var app = this;
+        var icoPath = string.IsNullOrEmpty(app.IcoPath) ?
+            (app.AppType == Win32Program.ApplicationType.InternetShortcutApplication ?
+                app.IcoPath :
+                app.FullPath) :
+            app.IcoPath;
+
+        return new AppItem()
+        {
+            Name = app.Name,
+            Subtitle = app.Description,
+            Type = app.Type(),
+            IcoPath = icoPath,
+            ExePath = !string.IsNullOrEmpty(app.LnkFilePath) ? app.LnkFilePath : app.FullPath,
+            DirPath = app.Location,
+            Commands = app.GetCommands(),
+            AppIdentifier = app.GetAppIdentifier(),
+            FullExecutablePath = app.FullPath,
+        };
     }
 }

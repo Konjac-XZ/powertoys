@@ -19,7 +19,7 @@ namespace Microsoft.CmdPal.UI.ViewModels.Properties {
     // class via a tool like ResGen or Visual Studio.
     // To add or remove a member, edit your .ResX file then rerun ResGen
     // with the /str option, or rebuild your VS project.
-    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("System.Resources.Tools.StronglyTypedResourceBuilder", "17.0.0.0")]
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("System.Resources.Tools.StronglyTypedResourceBuilder", "18.0.0.0")]
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
     public class Resources {
@@ -61,6 +61,15 @@ namespace Microsoft.CmdPal.UI.ViewModels.Properties {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Open Command Palette.
+        /// </summary>
+        public static string builtin_command_palette_title {
+            get {
+                return ResourceManager.GetString("builtin_command_palette_title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Create another.
         /// </summary>
         public static string builtin_create_extension_create_another {
@@ -70,20 +79,11 @@ namespace Microsoft.CmdPal.UI.ViewModels.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Where should the new extension be created? This path will be created if it doesn&apos;t exist.
+        ///   Looks up a localized string similar to Select the folder where the new extension will be created. The path will be created if it doesn&apos;t exist..
         /// </summary>
         public static string builtin_create_extension_directory_description {
             get {
                 return ResourceManager.GetString("builtin_create_extension_directory_description", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Output path.
-        /// </summary>
-        public static string builtin_create_extension_directory_header {
-            get {
-                return ResourceManager.GetString("builtin_create_extension_directory_header", resourceCulture);
             }
         }
         
@@ -106,20 +106,11 @@ namespace Microsoft.CmdPal.UI.ViewModels.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to The name of your extension as users will see it..
+        ///   Looks up a localized string similar to The name of the extension as it will appear to users..
         /// </summary>
         public static string builtin_create_extension_display_name_description {
             get {
                 return ResourceManager.GetString("builtin_create_extension_display_name_description", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Display name.
-        /// </summary>
-        public static string builtin_create_extension_display_name_header {
-            get {
-                return ResourceManager.GetString("builtin_create_extension_display_name_header", resourceCulture);
             }
         }
         
@@ -151,20 +142,11 @@ namespace Microsoft.CmdPal.UI.ViewModels.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to This is the name of your new extension project. It should be a valid C# class name. Best practice is to also include the word &apos;Extension&apos; in the name..
+        ///   Looks up a localized string similar to Enter a valid C# class name for the new extension project. It&apos;s recommended to include the word &quot;Extension&quot; in the name..
         /// </summary>
         public static string builtin_create_extension_name_description {
             get {
                 return ResourceManager.GetString("builtin_create_extension_name_description", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Extension name.
-        /// </summary>
-        public static string builtin_create_extension_name_header {
-            get {
-                return ResourceManager.GetString("builtin_create_extension_name_header", resourceCulture);
             }
         }
         
@@ -205,16 +187,7 @@ namespace Microsoft.CmdPal.UI.ViewModels.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Use this page to create a new extension project..
-        /// </summary>
-        public static string builtin_create_extension_page_text {
-            get {
-                return ResourceManager.GetString("builtin_create_extension_page_text", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Create your new extension.
+        ///   Looks up a localized string similar to Create a new extension.
         /// </summary>
         public static string builtin_create_extension_page_title {
             get {
@@ -241,7 +214,7 @@ namespace Microsoft.CmdPal.UI.ViewModels.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Create a new extension.
+        ///   Looks up a localized string similar to Create extension.
         /// </summary>
         public static string builtin_create_extension_title {
             get {
@@ -322,6 +295,69 @@ namespace Microsoft.CmdPal.UI.ViewModels.Properties {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Built-in.
+        /// </summary>
+        public static string builtin_extension_name {
+            get {
+                return ResourceManager.GetString("builtin_extension_name", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Built-in.
+        /// </summary>
+        public static string builtin_extension_name_fallback {
+            get {
+                return ResourceManager.GetString("builtin_extension_name_fallback", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to {0}, {1} commands.
+        /// </summary>
+        public static string builtin_extension_subtext {
+            get {
+                return ResourceManager.GetString("builtin_extension_subtext", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to {0}, {1}.
+        /// </summary>
+        public static string builtin_extension_subtext_disabled {
+            get {
+                return ResourceManager.GetString("builtin_extension_subtext_disabled", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to {0}, {1} commands, {2} fallback commands.
+        /// </summary>
+        public static string builtin_extension_subtext_with_fallback {
+            get {
+                return ResourceManager.GetString("builtin_extension_subtext_with_fallback", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Home.
+        /// </summary>
+        public static string builtin_home_name {
+            get {
+                return ResourceManager.GetString("builtin_home_name", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to View log folder.
+        /// </summary>
+        public static string builtin_log_folder_command_name {
+            get {
+                return ResourceManager.GetString("builtin_log_folder_command_name", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to View log.
         /// </summary>
         public static string builtin_log_name {
@@ -358,7 +394,16 @@ namespace Microsoft.CmdPal.UI.ViewModels.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Creates a project for a new Command Palette extension.
+        ///   Looks up a localized string similar to Search for apps, files and commands....
+        /// </summary>
+        public static string builtin_main_list_page_searchbar_placeholder {
+            get {
+                return ResourceManager.GetString("builtin_main_list_page_searchbar_placeholder", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Generate a new Command Palette extension project.
         /// </summary>
         public static string builtin_new_extension_subtitle {
             get {
@@ -367,20 +412,11 @@ namespace Microsoft.CmdPal.UI.ViewModels.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Open Settings.
+        ///   Looks up a localized string similar to Open Command Palette settings.
         /// </summary>
         public static string builtin_open_settings_name {
             get {
                 return ResourceManager.GetString("builtin_open_settings_name", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Open Command Palette settings.
-        /// </summary>
-        public static string builtin_open_settings_subtitle {
-            get {
-                return ResourceManager.GetString("builtin_open_settings_subtitle", resourceCulture);
             }
         }
         
@@ -417,6 +453,114 @@ namespace Microsoft.CmdPal.UI.ViewModels.Properties {
         public static string builtin_reload_subtitle {
             get {
                 return ResourceManager.GetString("builtin_reload_subtitle", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Pick background image.
+        /// </summary>
+        public static string builtin_settings_appearance_pick_background_image_title {
+            get {
+                return ResourceManager.GetString("builtin_settings_appearance_pick_background_image_title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to {0} extensions found.
+        /// </summary>
+        public static string builtin_settings_extension_n_extensions_found {
+            get {
+                return ResourceManager.GetString("builtin_settings_extension_n_extensions_found", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to {0} extensions installed.
+        /// </summary>
+        public static string builtin_settings_extension_n_extensions_installed {
+            get {
+                return ResourceManager.GetString("builtin_settings_extension_n_extensions_installed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Edit Dock.
+        /// </summary>
+        public static string dock_edit_dock_name {
+            get {
+                return ResourceManager.GetString("dock_edit_dock_name", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to {0} items.
+        /// </summary>
+        public static string dock_item_count_plural {
+            get {
+                return ResourceManager.GetString("dock_item_count_plural", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to 1 item.
+        /// </summary>
+        public static string dock_item_count_singular {
+            get {
+                return ResourceManager.GetString("dock_item_count_singular", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Settings.
+        /// </summary>
+        public static string dock_settings_name {
+            get {
+                return ResourceManager.GetString("dock_settings_name", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Fallbacks.
+        /// </summary>
+        public static string fallbacks {
+            get {
+                return ResourceManager.GetString("fallbacks", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Commands.
+        /// </summary>
+        public static string home_sections_commands_title {
+            get {
+                return ResourceManager.GetString("home_sections_commands_title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Pinned.
+        /// </summary>
+        public static string PinnedItemSuffix {
+            get {
+                return ResourceManager.GetString("PinnedItemSuffix", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Results.
+        /// </summary>
+        public static string results {
+            get {
+                return ResourceManager.GetString("results", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Show details.
+        /// </summary>
+        public static string ShowDetailsCommand {
+            get {
+                return ResourceManager.GetString("ShowDetailsCommand", resourceCulture);
             }
         }
     }

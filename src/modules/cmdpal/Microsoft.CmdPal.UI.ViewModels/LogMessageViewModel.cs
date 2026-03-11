@@ -13,8 +13,6 @@ public partial class LogMessageViewModel : ExtensionObjectViewModel
 
     public string Message { get; private set; } = string.Empty;
 
-    public string ExtensionPfn { get; set; } = string.Empty;
-
     public LogMessageViewModel(ILogMessage message, IPageContext context)
         : base(context)
     {
@@ -24,7 +22,7 @@ public partial class LogMessageViewModel : ExtensionObjectViewModel
     public override void InitializeProperties()
     {
         var model = _model.Unsafe;
-        if (model == null)
+        if (model is null)
         {
             return; // throw?
         }

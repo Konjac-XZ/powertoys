@@ -12,16 +12,19 @@ namespace Microsoft.CmdPal.Ext.System;
 
 internal sealed partial class FallbackSystemCommandItem : FallbackCommandItem
 {
-    public FallbackSystemCommandItem(SettingsManager settings)
-        : base(new NoOpCommand(), Resources.Microsoft_plugin_ext_fallback_display_title)
+    private const string _id = "com.microsoft.cmdpal.builtin.system.fallback";
+
+    public FallbackSystemCommandItem(ISettingsInterface settings)
+        : base(new NoOpCommand(), Resources.Microsoft_plugin_ext_fallback_display_title, _id)
     {
         Title = string.Empty;
         Subtitle = string.Empty;
+        Icon = Icons.LockIcon;
 
-        var isBootedInUefiMode = Win32Helpers.GetSystemFirmwareType() == FirmwareType.Uefi;
-        var hideEmptyRB = settings.HideEmptyRecycleBin;
-        var confirmSystemCommands = settings.ShowDialogToConfirmCommand;
-        var showSuccessOnEmptyRB = settings.ShowSuccessMessageAfterEmptyingRecycleBin;
+        var isBootedInUefiMode = settings.GetSystemFirmwareType() == FirmwareType.Uefi;
+        var hideEmptyRB = settings.HideEmptyRecycleBin();
+        var confirmSystemCommands = settings.ShowDialogToConfirmCommand();
+        var showSuccessOnEmptyRB = settings.ShowSuccessMessageAfterEmptyingRecycleBin();
 
         systemCommands = Commands.GetSystemCommands(isBootedInUefiMode, hideEmptyRB, confirmSystemCommands, showSuccessOnEmptyRB);
     }
@@ -46,8 +49,8 @@ internal sealed partial class FallbackSystemCommandItem : FallbackCommandItem
         {
             var title = command.Title;
             var subTitle = command.Subtitle;
-            var titleScore = StringMatcher.FuzzySearch(query, title).Score;
-            var subTitleScore = StringMatcher.FuzzySearch(query, subTitle).Score;
+            var titleScore = FuzzyStringMatcher.ScoreFuzzy(query, title);
+            var subTitleScore = FuzzyStringMatcher.ScoreFuzzy(query, subTitle);
 
             var maxScore = Math.Max(titleScore, subTitleScore);
             if (maxScore > resultScore)
@@ -57,7 +60,7 @@ internal sealed partial class FallbackSystemCommandItem : FallbackCommandItem
             }
         }
 
-        if (result == null)
+        if (result is null)
         {
             Command = null;
             Title = string.Empty;

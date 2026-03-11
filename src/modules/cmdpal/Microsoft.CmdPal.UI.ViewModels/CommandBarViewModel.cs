@@ -1,32 +1,55 @@
-﻿// Copyright (c) Microsoft Corporation
+// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using System.Collections.ObjectModel;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Messaging;
+using CommunityToolkit.WinUI;
 using Microsoft.CmdPal.UI.ViewModels.Messages;
+using Microsoft.CommandPalette.Extensions.Toolkit;
 using Windows.System;
+using DispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue;
+using DispatcherQueueTimer = Microsoft.UI.Dispatching.DispatcherQueueTimer;
 
 namespace Microsoft.CmdPal.UI.ViewModels;
 
-public partial class CommandBarViewModel : ObservableObject,
+public sealed partial class CommandBarViewModel : ObservableObject,
     IRecipient<UpdateCommandBarMessage>
 {
+    private readonly DispatcherQueueTimer _debounceTimer;
+
+    private volatile ICommandBarContext? _pendingSelectedItem;
+
     public ICommandBarContext? SelectedItem
     {
-        get => field;
+        get;
         set
         {
-            if (field != null)
+            // TODO: verify if we can safely return early
+            // if (ReferenceEquals(field, value))
+            // {
+            //     return;
+            // }
+            if (field is not null)
             {
                 field.PropertyChanged -= SelectedItemPropertyChanged;
             }
 
             field = value;
-            SetSelectedItem(value);
 
-            OnPropertyChanged(nameof(SelectedItem));
+            if (field is not null)
+            {
+                PrimaryCommand = field.PrimaryCommand;
+                field.PropertyChanged += SelectedItemPropertyChanged;
+            }
+            else
+            {
+                PrimaryCommand = null;
+            }
+
+            UpdateContextItems();
+            OnPropertyChanged();
         }
     }
 
@@ -34,13 +57,15 @@ public partial class CommandBarViewModel : ObservableObject,
     [NotifyPropertyChangedFor(nameof(HasPrimaryCommand))]
     public partial CommandItemViewModel? PrimaryCommand { get; set; }
 
-    public bool HasPrimaryCommand => PrimaryCommand != null && PrimaryCommand.ShouldBeVisible;
+    // TODO: PrimaryCommand.ShouldBeVisible is not observed, if it changes the bar won't refresh;
+    //       but at this moment CommandItemViewModel won't raise INPC for ShouldBeVisible anyway.
+    public bool HasPrimaryCommand => PrimaryCommand is not null && PrimaryCommand.ShouldBeVisible;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSecondaryCommand))]
     public partial CommandItemViewModel? SecondaryCommand { get; set; }
 
-    public bool HasSecondaryCommand => SecondaryCommand != null;
+    public bool HasSecondaryCommand => SecondaryCommand is not null;
 
     [ObservableProperty]
     public partial bool ShouldShowContextMenu { get; set; } = false;
@@ -48,36 +73,33 @@ public partial class CommandBarViewModel : ObservableObject,
     [ObservableProperty]
     public partial PageViewModel? CurrentPage { get; set; }
 
-    [ObservableProperty]
-    public partial ObservableCollection<ContextMenuStackViewModel> ContextMenuStack { get; set; } = [];
-
-    public ContextMenuStackViewModel? ContextMenu => ContextMenuStack.LastOrDefault();
-
     public CommandBarViewModel()
     {
+        var dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+        if (dispatcherQueue is null)
+        {
+            throw new InvalidOperationException("DispatcherQueue is not available for the current thread.");
+        }
+
+        _debounceTimer = dispatcherQueue.CreateTimer();
         WeakReferenceMessenger.Default.Register<UpdateCommandBarMessage>(this);
     }
 
-    public void Receive(UpdateCommandBarMessage message) => SelectedItem = message.ViewModel;
-
-    private void SetSelectedItem(ICommandBarContext? value)
+    public void Receive(UpdateCommandBarMessage message)
     {
-        if (value != null)
-        {
-            PrimaryCommand = value.PrimaryCommand;
-            value.PropertyChanged += SelectedItemPropertyChanged;
-        }
-        else
-        {
-            if (SelectedItem != null)
-            {
-                SelectedItem.PropertyChanged -= SelectedItemPropertyChanged;
-            }
+        _pendingSelectedItem = message.ViewModel;
 
-            PrimaryCommand = null;
-        }
+        // immediate: false is intentional — the timer tick always fires on the
+        // dispatcher queue thread, which guarantees ApplyPendingSelectedItem
+        // runs on the UI thread even if Receive is called from a background
+        // thread. Using immediate: true would invoke the delegate synchronously
+        // on the calling thread, bypassing the dispatcher.
+        _debounceTimer.Debounce(ApplyPendingSelectedItem, TimeSpan.FromMilliseconds(50));
+    }
 
-        UpdateContextItems();
+    private void ApplyPendingSelectedItem()
+    {
+        SelectedItem = _pendingSelectedItem;
     }
 
     private void SelectedItemPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -92,7 +114,7 @@ public partial class CommandBarViewModel : ObservableObject,
 
     private void UpdateContextItems()
     {
-        if (SelectedItem == null)
+        if (SelectedItem is null)
         {
             SecondaryCommand = null;
             ShouldShowContextMenu = false;
@@ -100,19 +122,9 @@ public partial class CommandBarViewModel : ObservableObject,
         }
 
         SecondaryCommand = SelectedItem.SecondaryCommand;
+        var moreCommands = SelectedItem.MoreCommands;
 
-        if (SelectedItem.MoreCommands.Count() > 1)
-        {
-            ShouldShowContextMenu = true;
-
-            ContextMenuStack.Clear();
-            ContextMenuStack.Add(new ContextMenuStackViewModel(SelectedItem));
-            OnPropertyChanged(nameof(ContextMenu));
-        }
-        else
-        {
-            ShouldShowContextMenu = false;
-        }
+        ShouldShowContextMenu = moreCommands.Count > 1 && SelectedItem.HasMoreCommands;
 
         OnPropertyChanged(nameof(HasSecondaryCommand));
         OnPropertyChanged(nameof(SecondaryCommand));
@@ -139,57 +151,36 @@ public partial class CommandBarViewModel : ObservableObject,
 
     public ContextKeybindingResult CheckKeybinding(bool ctrl, bool alt, bool shift, bool win, VirtualKey key)
     {
-        var matchedItem = ContextMenu?.CheckKeybinding(ctrl, alt, shift, win, key);
-        return matchedItem != null ? PerformCommand(matchedItem) : ContextKeybindingResult.Unhandled;
+        var keybindings = SelectedItem?.Keybindings();
+        if (keybindings is not null)
+        {
+            // Does the pressed key match any of the keybindings?
+            var pressedKeyChord = KeyChordHelpers.FromModifiers(ctrl, alt, shift, win, key, 0);
+            if (keybindings.TryGetValue(pressedKeyChord, out var matchedItem))
+            {
+                return matchedItem is not null ? PerformCommand(matchedItem) : ContextKeybindingResult.Unhandled;
+            }
+        }
+
+        return ContextKeybindingResult.Unhandled;
     }
 
     private ContextKeybindingResult PerformCommand(CommandItemViewModel? command)
     {
-        if (command == null)
+        if (command is null)
         {
             return ContextKeybindingResult.Unhandled;
         }
 
+        WeakReferenceMessenger.Default.Send<PerformCommandMessage>(new(command.Command.Model, command.Model));
         if (command.HasMoreCommands)
         {
-            ContextMenuStack.Add(new ContextMenuStackViewModel(command));
-            OnPropertyChanging(nameof(ContextMenu));
-            OnPropertyChanged(nameof(ContextMenu));
-            WeakReferenceMessenger.Default.Send<PerformCommandMessage>(new(command.Command.Model, command.Model));
             return ContextKeybindingResult.KeepOpen;
         }
         else
         {
-            WeakReferenceMessenger.Default.Send<PerformCommandMessage>(new(command.Command.Model, command.Model));
             return ContextKeybindingResult.Hide;
         }
-    }
-
-    public bool CanPopContextStack()
-    {
-        return ContextMenuStack.Count > 1;
-    }
-
-    public void PopContextStack()
-    {
-        if (ContextMenuStack.Count > 1)
-        {
-            ContextMenuStack.RemoveAt(ContextMenuStack.Count - 1);
-        }
-
-        OnPropertyChanging(nameof(ContextMenu));
-        OnPropertyChanged(nameof(ContextMenu));
-    }
-
-    public void ClearContextStack()
-    {
-        while (ContextMenuStack.Count > 1)
-        {
-            ContextMenuStack.RemoveAt(ContextMenuStack.Count - 1);
-        }
-
-        OnPropertyChanging(nameof(ContextMenu));
-        OnPropertyChanged(nameof(ContextMenu));
     }
 }
 

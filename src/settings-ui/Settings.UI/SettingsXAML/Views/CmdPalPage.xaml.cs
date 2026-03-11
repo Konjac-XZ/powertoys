@@ -13,19 +13,20 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace Microsoft.PowerToys.Settings.UI.Views
 {
-    public sealed partial class CmdPalPage : Page, IRefreshablePage
+    public sealed partial class CmdPalPage : NavigablePage, IRefreshablePage
     {
         private CmdPalViewModel ViewModel { get; set; }
 
         public CmdPalPage()
         {
-            var settingsUtils = new SettingsUtils();
+            var settingsUtils = SettingsUtils.Default;
             ViewModel = new CmdPalViewModel(
                 settingsUtils,
                 SettingsRepository<GeneralSettings>.GetInstance(settingsUtils),
                 ShellPage.SendDefaultIPCMessage,
                 DispatcherQueue);
             DataContext = ViewModel;
+            Loaded += (s, e) => ViewModel.OnPageLoaded();
             InitializeComponent();
         }
 
@@ -62,11 +63,19 @@ namespace Microsoft.PowerToys.Settings.UI.Views
             }
         }
 
-        private void CmdPalSettingsDeeplink_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        private void SettingsCard_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         {
             // Launch CmdPal settings window as normal user using explorer
             string launchPath = "explorer.exe";
             string launchArgs = "x-cmdpal://settings";
+            LaunchApp(launchPath, launchArgs);
+        }
+
+        private void LaunchCard_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        {
+            // Launch CmdPal window as normal user using explorer
+            string launchPath = "explorer.exe";
+            string launchArgs = "x-cmdpal:";
             LaunchApp(launchPath, launchArgs);
         }
     }

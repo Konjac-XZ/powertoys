@@ -30,23 +30,8 @@ internal sealed partial class NewExtensionForm : NewExtensionFormBase
         {
             "type": "TextBlock",
             "text": {{FormatJsonString(Properties.Resources.builtin_create_extension_page_title)}},
-            "size": "large"
-        },
-        {
-            "type": "TextBlock",
-            "text": {{FormatJsonString(Properties.Resources.builtin_create_extension_page_text)}},
-            "wrap": true
-        },
-        {
-            "type": "TextBlock",
-            "text": {{FormatJsonString(Properties.Resources.builtin_create_extension_name_header)}},
-            "weight": "bolder",
-            "size": "default"
-        },
-        {
-            "type": "TextBlock",
-            "text": {{FormatJsonString(Properties.Resources.builtin_create_extension_name_description)}},
-            "wrap": true
+            "size": "medium",
+            "weight": "bolder"
         },
         {
             "type": "Input.Text",
@@ -59,14 +44,11 @@ internal sealed partial class NewExtensionForm : NewExtensionFormBase
         },
         {
             "type": "TextBlock",
-            "text": {{FormatJsonString(Properties.Resources.builtin_create_extension_display_name_header)}},
-            "weight": "bolder",
-            "size": "default"
-        },
-        {
-            "type": "TextBlock",
-            "text": {{FormatJsonString(Properties.Resources.builtin_create_extension_display_name_description)}},
-            "wrap": true
+            "text": {{FormatJsonString(Properties.Resources.builtin_create_extension_name_description)}},
+            "wrap": true,
+            "size": "small",
+            "isSubtle": true,
+            "spacing": "none"
         },
         {
             "type": "Input.Text",
@@ -74,18 +56,16 @@ internal sealed partial class NewExtensionForm : NewExtensionFormBase
             "isRequired": true,
             "errorMessage": {{FormatJsonString(Properties.Resources.builtin_create_extension_display_name_required)}},
             "id": "DisplayName",
-            "placeholder": "My new extension"
+            "placeholder": "My new extension",
+            "spacing": "medium"
         },
         {
             "type": "TextBlock",
-            "text": {{FormatJsonString(Properties.Resources.builtin_create_extension_directory_header)}},
-            "weight": "bolder",
-            "size": "default"
-        },
-        {
-            "type": "TextBlock",
-            "text": {{FormatJsonString(Properties.Resources.builtin_create_extension_directory_description)}},
-            "wrap": true
+            "text": {{FormatJsonString(Properties.Resources.builtin_create_extension_display_name_description)}},
+            "wrap": true,
+            "size": "small",
+            "isSubtle": true,
+            "spacing": "none"
         },
         {
             "type": "Input.Text",
@@ -93,7 +73,16 @@ internal sealed partial class NewExtensionForm : NewExtensionFormBase
             "isRequired": true,
             "errorMessage": {{FormatJsonString(Properties.Resources.builtin_create_extension_directory_required)}},
             "id": "OutputPath",
-            "placeholder": "C:\\users\\me\\dev"
+            "placeholder": "C:\\users\\me\\dev",
+            "spacing": "medium"
+        },
+        {
+            "type": "TextBlock",
+            "text": {{FormatJsonString(Properties.Resources.builtin_create_extension_directory_description)}},
+            "wrap": true,
+            "size": "small",
+            "isSubtle": true,
+            "spacing": "none"
         }
     ],
     "actions": [
@@ -110,7 +99,7 @@ internal sealed partial class NewExtensionForm : NewExtensionFormBase
     public override CommandResult SubmitForm(string payload)
     {
         var formInput = JsonNode.Parse(payload)?.AsObject();
-        if (formInput == null)
+        if (formInput is null)
         {
             return CommandResult.KeepOpen();
         }
@@ -134,9 +123,8 @@ internal sealed partial class NewExtensionForm : NewExtensionFormBase
         }
         catch (Exception e)
         {
-            BuiltinsExtensionHost.Instance.HideStatus(_creatingMessage);
-
             _creatingMessage.State = MessageState.Error;
+            _creatingMessage.Progress = null;
             _creatingMessage.Message = $"Error: {e.Message}";
         }
 

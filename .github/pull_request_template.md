@@ -4,7 +4,8 @@
 <!-- Please review the items on the PR checklist before submitting-->
 ## PR Checklist
 
-- [ ] **Closes:** #xxx
+- [ ] Closes: #xxx
+<!--  - [ ] Closes: #yyy (add separate lines for additional resolved issues) -->
 - [ ] **Communication:** I've discussed this with core contributors already. If the work hasn't been agreed, this work might be rejected
 - [ ] **Tests:** Added/updated and all pass
 - [ ] **Localization:** All end-user-facing strings can be localized

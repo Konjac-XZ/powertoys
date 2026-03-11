@@ -55,7 +55,7 @@ The module is initialized in the AlwaysOnTop class. During initialization, the f
 The AlwaysOnTop class handles the pinning and unpinning of windows. Key methods include:
 
 - **PinTopmostWindow**: Pins the specified window on top of others and applies visual indicators
-- **UnpinTopmostWindowss**: Removes the pinning status and visual indicators from the specified window
+- **UnpinTopmostWindows**: Removes the pinning status and visual indicators from the specified window
 - **AssignBorder**: Applies a colored border around the pinned window based on user settings
 
 ### Settings Management
@@ -86,7 +86,7 @@ The module provides a user interface for configuring settings in the PowerToys S
 ### Building and Testing
 
 1. Clone the repository: `git clone https://github.com/microsoft/PowerToys.git`
-2. Open PowerToys.sln in Visual Studio
+2. Open PowerToys.slnx in Visual Studio
 3. Select the Release configuration and build the solution
 4. Run PowerToys.exe from the output directory to test the module
 

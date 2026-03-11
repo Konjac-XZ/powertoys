@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation
+// Copyright (c) Microsoft Corporation
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
@@ -19,6 +19,8 @@ public partial class DetailsViewModel(IDetails _details, WeakReference<IPageCont
 
     public string Body { get; private set; } = string.Empty;
 
+    public ContentSize? Size { get; private set; } = ContentSize.Small;
+
     // Metadata is an array of IDetailsElement,
     //   where IDetailsElement = {IDetailsTags, IDetailsLink, IDetailsSeparator}
     public List<DetailsElementViewModel> Metadata { get; private set; } = [];
@@ -26,7 +28,7 @@ public partial class DetailsViewModel(IDetails _details, WeakReference<IPageCont
     public override void InitializeProperties()
     {
         var model = _detailsModel.Unsafe;
-        if (model == null)
+        if (model is null)
         {
             return;
         }
@@ -40,8 +42,23 @@ public partial class DetailsViewModel(IDetails _details, WeakReference<IPageCont
         UpdateProperty(nameof(Body));
         UpdateProperty(nameof(HeroImage));
 
+        if (model is IExtendedAttributesProvider provider)
+        {
+            if (provider.GetProperties()?.TryGetValue("Size", out var rawValue) == true)
+            {
+                if (rawValue is int sizeAsInt)
+                {
+                    Size = (ContentSize)sizeAsInt;
+                }
+            }
+        }
+
+        Size ??= ContentSize.Small;
+
+        UpdateProperty(nameof(Size));
+
         var meta = model.Metadata;
-        if (meta != null)
+        if (meta is not null)
         {
             foreach (var element in meta)
             {
@@ -53,7 +70,7 @@ public partial class DetailsViewModel(IDetails _details, WeakReference<IPageCont
                     IDetailsTags => new DetailsTagsViewModel(element, this.PageContext),
                     _ => null,
                 };
-                if (vm != null)
+                if (vm is not null)
                 {
                     vm.InitializeProperties();
                     Metadata.Add(vm);
