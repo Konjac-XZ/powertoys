@@ -37,10 +37,6 @@
     <OutDir>$(Platform)\$(Configuration)\SetupShared\</OutDir>
     <IntDir>$(SolutionDir)$(ProjectName)\$(Platform)\$(Configuration)\SetupShared\obj\</IntDir>
   </PropertyGroup>
-  <PropertyGroup>
-    <WixNativePlatform Condition="'$(Platform)'=='Win32'">x86</WixNativePlatform>
-    <WixNativePlatform Condition="'$(WixNativePlatform)'==''">$(Platform)</WixNativePlatform>
-  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)'=='Debug'">
     <LinkIncremental>true</LinkIncremental>
   </PropertyGroup>
@@ -106,7 +102,7 @@
       <PreprocessorDefinitions>WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)..\packages\WixToolset.WcaUtil.5.0.2\build\native\v14\$(WixNativePlatform);$(MSBuildThisFileDirectory)..\packages\WixToolset.DUtil.5.0.2\build\native\v14\$(WixNativePlatform);$(NUGET_PACKAGES)\wixtoolset.wcautil\5.0.2\build\native\v14\$(WixNativePlatform);$(NUGET_PACKAGES)\wixtoolset.dutil\5.0.2\build\native\v14\$(WixNativePlatform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(NUGET_PACKAGES)\wixtoolset.wcautil\5.0.2\build\native\v14\$(Platform);$(NUGET_PACKAGES)\wixtoolset.dutil\5.0.2\build\native\v14\$(Platform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
