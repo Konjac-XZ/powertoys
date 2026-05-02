@@ -2,20 +2,31 @@
 // The Microsoft Corporation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System.Collections.Immutable;
 using System.Text.Json.Serialization;
-using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace Microsoft.CmdPal.UI.ViewModels;
 
-public partial class AppStateModel : ObservableObject
+public record AppStateModel
 {
     ///////////////////////////////////////////////////////////////////////////
     // STATE HERE
-    // Make sure that you make the setters public (JsonSerializer.Deserialize will fail silently otherwise)!
     // Make sure that any new types you add are added to JsonSerializationContext!
-    public RecentCommandsManager RecentCommands { get; set; } = new();
+    private RecentCommandsManager? _recentCommands = new();
 
-    public List<string> RunHistory { get; set; } = [];
+    public RecentCommandsManager RecentCommands
+    {
+        get => _recentCommands ?? new();
+        init => _recentCommands = value;
+    }
+
+    private ImmutableList<string>? _runHistory = ImmutableList<string>.Empty;
+
+    public ImmutableList<string> RunHistory
+    {
+        get => _runHistory ?? ImmutableList<string>.Empty;
+        init => _runHistory = value;
+    }
 
     // END SETTINGS
     ///////////////////////////////////////////////////////////////////////////
