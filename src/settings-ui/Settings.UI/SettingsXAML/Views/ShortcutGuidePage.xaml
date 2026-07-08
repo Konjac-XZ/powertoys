@@ -33,14 +33,14 @@
                         <tkcontrols:SettingsCard.Description>
                             <HyperlinkButton x:Uid="Windows_Color_Settings" Click="OpenColorsSettings_Click" />
                         </tkcontrols:SettingsCard.Description>
-                        <ComboBox MinWidth="{StaticResource SettingActionControlMinWidth}" SelectedIndex="{x:Bind ViewModel.ThemeIndex, Mode=TwoWay}">
+                        <ComboBox MinWidth="{StaticResource SettingActionControlMinWidth}" SelectedIndex="{Binding ThemeIndex, Mode=TwoWay}">
                             <ComboBoxItem x:Uid="Radio_Theme_Dark" />
                             <ComboBoxItem x:Uid="Radio_Theme_Light" />
                             <ComboBoxItem x:Uid="Radio_Theme_Default" />
                         </ComboBox>
                     </tkcontrols:SettingsCard>
                     <tkcontrols:SettingsCard x:Uid="ShortcutGuide_WindowPosition" HeaderIcon="{ui:FontIcon Glyph=&#xE8A0;}">
-                        <ComboBox MinWidth="{StaticResource SettingActionControlMinWidth}" SelectedIndex="{x:Bind ViewModel.PositionIndex, Mode=TwoWay}">
+                        <ComboBox MinWidth="{StaticResource SettingActionControlMinWidth}" SelectedIndex="{Binding PositionIndex, Mode=TwoWay}">
                             <ComboBoxItem x:Uid="ShortcutGuide_WindowPosition_Left" />
                             <ComboBoxItem x:Uid="ShortcutGuide_WindowPosition_Right" />
                         </ComboBox>
