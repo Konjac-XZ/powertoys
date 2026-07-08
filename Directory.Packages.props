@@ -81,6 +81,7 @@
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.0.1" />
     <PackageVersion Include="Microsoft.WindowsAppSDK.Foundation" Version="2.0.20" />
     <PackageVersion Include="Microsoft.WindowsAppSDK.AI" Version="2.0.185" />
+    <PackageVersion Include="Microsoft.Windows.AI.MachineLearning" Version="2.1.70" />
     <PackageVersion Include="Microsoft.WindowsAppSDK.Runtime" Version="2.0.1" />
     <PackageVersion Include="Microsoft.Xaml.Behaviors.WinUI.Managed" Version="2.0.9" />
     <PackageVersion Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.39" />
