@@ -6,6 +6,8 @@
 #include <common/logger/call_tracer.h>
 #include <common/utils/EventWaiter.h>
 #include <common/utils/winapi_error.h>
+#include <common/utils/excluded_apps.h>
+#include <common/utils/process_path.h>
 #include <common/SettingsAPI/FileWatcher.h>
 #include <common/notifications/NotificationUtil.h>
 
@@ -430,25 +432,33 @@ void FancyZones::WindowCreated(HWND window) noexcept
     auto currentVirtualDesktop = VirtualDesktop::instance().GetCurrentVirtualDesktopIdFromRegistry();
     if (moveToAppLastZone)
     {
-        if (FancyZonesSettings::settings().spanZonesAcrossMonitors)
-        {
-            windowMovedToZone = MoveToAppLastZone(window, nullptr, currentVirtualDesktop);
-        }
-        else
-        {
-            // Search application history on currently active monitor.
-            windowMovedToZone = MoveToAppLastZone(window, active, currentVirtualDesktop);
+        // Check if the app is excluded from the "move to last zone" feature
+        std::wstring processPath = get_process_path_waiting_uwp(window);
+        CharUpperBuffW(const_cast<std::wstring&>(processPath).data(), static_cast<DWORD>(processPath.length()));
+        bool isExcludedFromLastZone = check_excluded_app(window, processPath, FancyZonesSettings::settings().excludedFromLastZoneAppsArray);
 
-            if (!windowMovedToZone && primary != active)
+        if (!isExcludedFromLastZone)
+        {
+            if (FancyZonesSettings::settings().spanZonesAcrossMonitors)
             {
-                // Search application history on primary monitor.
-                windowMovedToZone = MoveToAppLastZone(window, primary, currentVirtualDesktop);
-            }
-
-            if (!windowMovedToZone)
-            {
-                // Search application history on remaining monitors.
                 windowMovedToZone = MoveToAppLastZone(window, nullptr, currentVirtualDesktop);
+            }
+            else
+            {
+                // Search application history on currently active monitor.
+                windowMovedToZone = MoveToAppLastZone(window, active, currentVirtualDesktop);
+
+                if (!windowMovedToZone && primary != active)
+                {
+                    // Search application history on primary monitor.
+                    windowMovedToZone = MoveToAppLastZone(window, primary, currentVirtualDesktop);
+                }
+
+                if (!windowMovedToZone)
+                {
+                    // Search application history on remaining monitors.
+                    windowMovedToZone = MoveToAppLastZone(window, nullptr, currentVirtualDesktop);
+                }
             }
         }
     }

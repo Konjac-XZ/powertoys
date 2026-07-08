@@ -102,7 +102,7 @@ namespace Microsoft.PowerToys.Settings.UI.Controls
             set { SetValue(HighlightOpacityProperty, value); }
         }
 
-        public static readonly DependencyProperty HighlightOpacityProperty = DependencyProperty.Register("CustomHighlightColor", typeof(double), typeof(FancyZonesPreviewControl), new PropertyMetadata(1.0, OnPropertyChanged));
+        public static readonly DependencyProperty HighlightOpacityProperty = DependencyProperty.Register("HighlightOpacity", typeof(double), typeof(FancyZonesPreviewControl), new PropertyMetadata(1.0, OnPropertyChanged));
 
         private static void OnPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {

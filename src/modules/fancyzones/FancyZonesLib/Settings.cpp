@@ -46,6 +46,7 @@ namespace NonLocalizable
     const wchar_t NextTabHotkeyID[] = L"fancyzones_nextTab_hotkey";
     const wchar_t PrevTabHotkeyID[] = L"fancyzones_prevTab_hotkey";
     const wchar_t ExcludedAppsID[] = L"fancyzones_excluded_apps";
+    const wchar_t ExcludedFromLastZoneAppsID[] = L"fancyzones_excluded_from_last_zone_apps";
     const wchar_t ZoneHighlightOpacityID[] = L"fancyzones_highlight_opacity";
     const wchar_t ShowZoneNumberID[] = L"fancyzones_showZoneNumber";
 }
@@ -229,6 +230,32 @@ void FancyZonesSettings::LoadSettings()
                 m_settings.excludedApps = apps;
                 m_settings.excludedAppsArray = excludedApps;
                 NotifyObservers(SettingId::ExcludedApps);
+            }
+        }
+
+        // excluded from last zone apps
+        if (auto val = values.get_string_value(NonLocalizable::ExcludedFromLastZoneAppsID))
+        {
+            std::wstring apps = std::move(*val);
+            std::vector<std::wstring> excludedFromLastZoneApps;
+            auto excludedUppercase = apps;
+            CharUpperBuffW(excludedUppercase.data(), static_cast<DWORD>(excludedUppercase.length()));
+            std::wstring_view view(excludedUppercase);
+            view = left_trim<wchar_t>(trim<wchar_t>(view));
+
+            while (!view.empty())
+            {
+                auto pos = (std::min)(view.find_first_of(L"\r\n"), view.length());
+                excludedFromLastZoneApps.emplace_back(view.substr(0, pos));
+                view.remove_prefix(pos);
+                view = left_trim<wchar_t>(trim<wchar_t>(view));
+            }
+
+            if (m_settings.excludedFromLastZoneAppsArray != excludedFromLastZoneApps)
+            {
+                m_settings.excludedFromLastZoneApps = apps;
+                m_settings.excludedFromLastZoneAppsArray = excludedFromLastZoneApps;
+                NotifyObservers(SettingId::ExcludedFromLastZoneApps);
             }
         }
 
