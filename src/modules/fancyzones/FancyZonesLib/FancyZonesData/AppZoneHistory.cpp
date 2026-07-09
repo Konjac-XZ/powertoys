@@ -85,15 +85,23 @@ namespace JsonUtils
             FancyZonesDataTypes::AppZoneHistoryData data;
             if (json.HasKey(NonLocalizable::AppZoneHistoryIds::LayoutIndexesID))
             {
-                data.zoneIndexSet = {};
-                for (const auto& value : json.GetNamedArray(NonLocalizable::AppZoneHistoryIds::LayoutIndexesID))
+                const auto value = json.GetNamedValue(NonLocalizable::AppZoneHistoryIds::LayoutIndexesID);
+                if (value.ValueType() == json::JsonValueType::Array)
                 {
-                    data.zoneIndexSet.push_back(static_cast<ZoneIndex>(value.GetNumber()));
+                    data.zoneIndexSet = {};
+                    for (const auto& zoneIndex : value.GetArray())
+                    {
+                        data.zoneIndexSet.push_back(static_cast<ZoneIndex>(zoneIndex.GetNumber()));
+                    }
                 }
-            }
-            else if (json.HasKey(NonLocalizable::AppZoneHistoryIds::LayoutIndexesID))
-            {
-                data.zoneIndexSet = { static_cast<ZoneIndex>(json.GetNamedNumber(NonLocalizable::AppZoneHistoryIds::LayoutIndexesID)) };
+                else if (value.ValueType() == json::JsonValueType::Number)
+                {
+                    data.zoneIndexSet = { static_cast<ZoneIndex>(value.GetNumber()) };
+                }
+                else
+                {
+                    return std::nullopt;
+                }
             }
 
             auto deviceIdOpt = DeviceIdFromJson(json);
@@ -239,6 +247,37 @@ namespace JsonUtils
 
         root.SetNamedValue(NonLocalizable::AppZoneHistoryIds::AppZoneHistoryID, appHistoryArray);
         return root;
+    }
+}
+
+namespace
+{
+    bool IsSameVirtualDesktopOrLegacy(const GUID& historyVirtualDesktopId, const GUID& currentVirtualDesktopId) noexcept
+    {
+        return historyVirtualDesktopId == currentVirtualDesktopId || historyVirtualDesktopId == GUID_NULL;
+    }
+
+    bool IsSameMonitorFamily(const FancyZonesDataTypes::MonitorId& historyMonitorId, const FancyZonesDataTypes::MonitorId& currentMonitorId) noexcept
+    {
+        const auto& historyDeviceId = historyMonitorId.deviceId;
+        const auto& currentDeviceId = currentMonitorId.deviceId;
+
+        if (!historyDeviceId.id.empty() && historyDeviceId.id == currentDeviceId.id && historyDeviceId.number != 0 && historyDeviceId.number == currentDeviceId.number)
+        {
+            return true;
+        }
+
+        if (!historyMonitorId.serialNumber.empty() && historyMonitorId.serialNumber == currentMonitorId.serialNumber && historyDeviceId.number != 0 && historyDeviceId.number == currentDeviceId.number)
+        {
+            return true;
+        }
+
+        if (historyDeviceId.isDefault() && currentDeviceId.isDefault() && historyDeviceId.number != 0 && historyDeviceId.number == currentDeviceId.number)
+        {
+            return true;
+        }
+
+        return false;
     }
 }
 
@@ -492,6 +531,69 @@ std::optional<FancyZonesDataTypes::AppZoneHistoryData> AppZoneHistory::GetZoneHi
     return std::nullopt;
 }
 
+AppZoneHistory::MatchResult AppZoneHistory::GetAppLastZone(HWND window, const FancyZonesDataTypes::WorkAreaId& workAreaId, const GUID& layoutId, bool allowMonitorFallback) const
+{
+    auto processPath = get_process_path_waiting_uwp(window);
+    if (processPath.empty())
+    {
+        Logger::error("Process path is empty");
+        return { .reason = MatchReason::ProcessPathEmpty };
+    }
+
+    return GetAppLastZone(processPath, workAreaId, layoutId, allowMonitorFallback);
+}
+
+AppZoneHistory::MatchResult AppZoneHistory::GetAppLastZone(const std::wstring& appPath, const FancyZonesDataTypes::WorkAreaId& workAreaId, const GUID& layoutId, bool allowMonitorFallback) const
+{
+    auto app = appPath;
+    auto pos = appPath.find_last_of('\\');
+    if (pos != std::string::npos && pos + 1 < appPath.length())
+    {
+        app = appPath.substr(pos + 1);
+    }
+
+    Logger::info(L"Get {} zone history on work area: {}", app, workAreaId.toString());
+
+    auto history = m_history.find(appPath);
+    if (history == std::end(m_history))
+    {
+        return { .reason = MatchReason::AppHistoryNotFound };
+    }
+
+    MatchReason missReason = MatchReason::LayoutMismatch;
+    const auto& perDesktopData = history->second;
+    for (const auto& data : perDesktopData)
+    {
+        if (data.layoutId != layoutId)
+        {
+            continue;
+        }
+
+        missReason = MatchReason::WorkAreaMismatch;
+        if (data.workAreaId.monitorId == workAreaId.monitorId && IsSameVirtualDesktopOrLegacy(data.workAreaId.virtualDesktopId, workAreaId.virtualDesktopId))
+        {
+            Logger::info(L"App zone history found on the work area {}", data.workAreaId.toString());
+            return { .kind = MatchKind::Exact, .reason = MatchReason::Found, .data = data };
+        }
+    }
+
+    if (allowMonitorFallback)
+    {
+        for (const auto& data : perDesktopData)
+        {
+            if (data.layoutId == layoutId &&
+                IsSameVirtualDesktopOrLegacy(data.workAreaId.virtualDesktopId, workAreaId.virtualDesktopId) &&
+                IsSameMonitorFamily(data.workAreaId.monitorId, workAreaId.monitorId))
+            {
+                Logger::info(L"App zone history found by monitor fallback, source work area: {}, target work area: {}", data.workAreaId.toString(), workAreaId.toString());
+                return { .kind = MatchKind::MonitorFallback, .reason = MatchReason::Found, .data = data };
+            }
+        }
+    }
+
+    return { .reason = missReason };
+}
+
 bool AppZoneHistory::IsAnotherWindowOfApplicationInstanceZoned(HWND window, const FancyZonesDataTypes::WorkAreaId& workAreaId) const noexcept
 {
     auto processPath = get_process_path_waiting_uwp(window);
@@ -528,42 +630,8 @@ bool AppZoneHistory::IsAnotherWindowOfApplicationInstanceZoned(HWND window, cons
 
 ZoneIndexSet AppZoneHistory::GetAppLastZoneIndexSet(HWND window, const FancyZonesDataTypes::WorkAreaId& workAreaId, const GUID& layoutId) const
 {
-    auto processPath = get_process_path_waiting_uwp(window);
-    if (processPath.empty())
-    {
-        Logger::error("Process path is empty");
-        return {};
-    }
-
-    auto app = processPath;
-    auto pos = processPath.find_last_of('\\');
-    if (pos != std::string::npos && pos + 1 < processPath.length())
-    {
-        app = processPath.substr(pos + 1);
-    }
-
-    Logger::info(L"Get {} zone history on work area: {}", app, workAreaId.toString());
-
-    auto history = m_history.find(processPath);
-    if (history == std::end(m_history))
-    {
-        return {};
-    }
-
-    const auto& perDesktopData = history->second;
-    for (const auto& data : perDesktopData)
-    {
-        if (data.layoutId == layoutId && data.workAreaId == workAreaId)
-        {
-            if (data.workAreaId.virtualDesktopId == workAreaId.virtualDesktopId || data.workAreaId.virtualDesktopId == GUID_NULL)
-            {
-                Logger::info(L"App zone history found on the work area {}", data.workAreaId.toString());
-                return data.zoneIndexSet;
-            }
-        }
-    }
-    
-    return {};
+    const auto result = GetAppLastZone(window, workAreaId, layoutId, false);
+    return result.kind == MatchKind::Exact ? result.data.zoneIndexSet : ZoneIndexSet{};
 }
 
 void AppZoneHistory::SyncVirtualDesktops(const GUID& currentVirtualDesktop, const GUID& lastUsedVirtualDesktop, std::optional<std::vector<GUID>> desktops)

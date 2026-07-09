@@ -118,7 +118,7 @@ WorkArea::~WorkArea()
     windowPool.FreeZonesOverlayWindow(m_window);
 }
 
-bool WorkArea::Snap(HWND window, const ZoneIndexSet& zones, bool updatePosition)
+bool WorkArea::Snap(HWND window, const ZoneIndexSet& zones, bool updatePosition, HistoryUpdateMode historyUpdateMode)
 {
     if (!m_layout || zones.empty())
     {
@@ -134,7 +134,10 @@ bool WorkArea::Snap(HWND window, const ZoneIndexSet& zones, bool updatePosition)
     }
 
     m_layoutWindows.Assign(window, zones);
-    AppZoneHistory::instance().SetAppLastZones(window, m_uniqueId, m_layout->Id(), zones);
+    if (historyUpdateMode == HistoryUpdateMode::Update)
+    {
+        AppZoneHistory::instance().SetAppLastZones(window, m_uniqueId, m_layout->Id(), zones);
+    }
 
     if (updatePosition)
     {

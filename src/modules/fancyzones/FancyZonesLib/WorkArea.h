@@ -12,6 +12,12 @@ class WorkArea
 public:
     ~WorkArea();
 
+    enum class HistoryUpdateMode
+    {
+        Update,
+        Skip,
+    };
+
     static std::unique_ptr<WorkArea> Create(HINSTANCE hinstance, const FancyZonesDataTypes::WorkAreaId& uniqueId, const FancyZonesDataTypes::WorkAreaId& parentUniqueId, const FancyZonesUtils::Rect& workAreaRect)
     {
         auto self = std::unique_ptr<WorkArea>(new WorkArea(hinstance, uniqueId, workAreaRect));
@@ -47,7 +53,7 @@ public:
     void InitSnappedWindows();
     void UpdateWindowPositions();
 
-    bool Snap(HWND window, const ZoneIndexSet& zones, bool updatePosition = true);
+    bool Snap(HWND window, const ZoneIndexSet& zones, bool updatePosition = true, HistoryUpdateMode historyUpdateMode = HistoryUpdateMode::Update);
     bool Unsnap(HWND window);
 
     void ShowZones(const ZoneIndexSet& highlight, HWND draggedWindow = nullptr);

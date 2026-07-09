@@ -205,6 +205,94 @@ namespace FancyZonesUnitTests
             }
         }
 
+        TEST_METHOD (AppZoneHistoryParseScalarZoneIndex)
+        {
+            // prepare
+            json::JsonObject root{};
+            json::JsonArray appZoneHistoryArray{};
+            json::JsonArray history{};
+
+            json::JsonObject device{};
+            device.SetNamedValue(NonLocalizable::AppZoneHistoryIds::MonitorID, json::value(L"monitor-1"));
+            device.SetNamedValue(NonLocalizable::AppZoneHistoryIds::VirtualDesktopID, json::value(L"{72FA9FC0-26A6-4B37-A834-491C148DFC58}"));
+
+            json::JsonObject historyObj{};
+            historyObj.SetNamedValue(NonLocalizable::AppZoneHistoryIds::LayoutIdID, json::value(L"{61FA9FC0-26A6-4B37-A834-491C148DFC57}"));
+            historyObj.SetNamedValue(NonLocalizable::AppZoneHistoryIds::DeviceID, device);
+            historyObj.SetNamedValue(NonLocalizable::AppZoneHistoryIds::LayoutIndexesID, json::value(2));
+            history.Append(historyObj);
+
+            json::JsonObject obj{};
+            obj.SetNamedValue(NonLocalizable::AppZoneHistoryIds::AppPathID, json::value(L"app-1"));
+            obj.SetNamedValue(NonLocalizable::AppZoneHistoryIds::HistoryID, history);
+            appZoneHistoryArray.Append(obj);
+
+            root.SetNamedValue(NonLocalizable::AppZoneHistoryIds::AppZoneHistoryID, appZoneHistoryArray);
+            json::to_file(AppZoneHistory::AppZoneHistoryFileName(), root);
+
+            // test
+            AppZoneHistory::instance().LoadData();
+            FancyZonesDataTypes::WorkAreaId id{
+                .monitorId = { .deviceId = { .id = L"monitor-1" } },
+                .virtualDesktopId = FancyZonesUtils::GuidFromString(L"{72FA9FC0-26A6-4B37-A834-491C148DFC58}").value()
+            };
+
+            auto historyResult = AppZoneHistory::instance().GetZoneHistory(L"app-1", id);
+            Assert::IsTrue(historyResult.has_value());
+            Assert::IsTrue(ZoneIndexSet{ 2 } == historyResult->zoneIndexSet);
+        }
+
+        TEST_METHOD (AppZoneHistoryMonitorFallback)
+        {
+            const auto layoutId = FancyZonesUtils::GuidFromString(L"{2FEC41DA-3A0B-4E31-9CE1-9473C65D99F2}").value();
+            const auto virtualDesktopId = FancyZonesUtils::GuidFromString(L"{39B25DD2-130D-4B5D-8851-4791D66B1539}").value();
+            const std::wstring app = L"app";
+
+            FancyZonesDataTypes::WorkAreaId savedWorkArea{
+                .monitorId = { .deviceId = { .id = L"DELA026", .instanceId = L"old-instance", .number = 1 }, .serialNumber = L"old-serial" },
+                .virtualDesktopId = virtualDesktopId
+            };
+            FancyZonesDataTypes::WorkAreaId currentWorkArea{
+                .monitorId = { .deviceId = { .id = L"DELA026", .instanceId = L"new-instance", .number = 1 }, .serialNumber = L"new-serial" },
+                .virtualDesktopId = virtualDesktopId
+            };
+
+            AppZoneHistory::TAppZoneHistoryMap history{};
+            history.insert({ app, { FancyZonesDataTypes::AppZoneHistoryData{ .layoutId = layoutId, .workAreaId = savedWorkArea, .zoneIndexSet = { 1 } } } });
+            AppZoneHistory::instance().SetAppZoneHistory(history);
+
+            const auto withoutFallback = AppZoneHistory::instance().GetAppLastZone(app, currentWorkArea, layoutId, false);
+            Assert::AreEqual(static_cast<int>(AppZoneHistory::MatchKind::None), static_cast<int>(withoutFallback.kind));
+
+            const auto withFallback = AppZoneHistory::instance().GetAppLastZone(app, currentWorkArea, layoutId, true);
+            Assert::AreEqual(static_cast<int>(AppZoneHistory::MatchKind::MonitorFallback), static_cast<int>(withFallback.kind));
+            Assert::IsTrue(ZoneIndexSet{ 1 } == withFallback.data.zoneIndexSet);
+        }
+
+        TEST_METHOD (AppZoneHistoryMonitorFallbackDoesNotCrossVirtualDesktops)
+        {
+            const auto layoutId = FancyZonesUtils::GuidFromString(L"{2FEC41DA-3A0B-4E31-9CE1-9473C65D99F2}").value();
+            const auto savedVirtualDesktopId = FancyZonesUtils::GuidFromString(L"{39B25DD2-130D-4B5D-8851-4791D66B1539}").value();
+            const auto currentVirtualDesktopId = FancyZonesUtils::GuidFromString(L"{49B25DD2-130D-4B5D-8851-4791D66B1539}").value();
+            const std::wstring app = L"app";
+
+            FancyZonesDataTypes::WorkAreaId savedWorkArea{
+                .monitorId = { .deviceId = { .id = L"DELA026", .instanceId = L"old-instance", .number = 1 }, .serialNumber = L"old-serial" },
+                .virtualDesktopId = savedVirtualDesktopId
+            };
+            FancyZonesDataTypes::WorkAreaId currentWorkArea{
+                .monitorId = { .deviceId = { .id = L"DELA026", .instanceId = L"new-instance", .number = 1 }, .serialNumber = L"new-serial" },
+                .virtualDesktopId = currentVirtualDesktopId
+            };
+
+            AppZoneHistory::TAppZoneHistoryMap history{};
+            history.insert({ app, { FancyZonesDataTypes::AppZoneHistoryData{ .layoutId = layoutId, .workAreaId = savedWorkArea, .zoneIndexSet = { 1 } } } });
+            AppZoneHistory::instance().SetAppZoneHistory(history);
+
+            const auto withFallback = AppZoneHistory::instance().GetAppLastZone(app, currentWorkArea, layoutId, true);
+            Assert::AreEqual(static_cast<int>(AppZoneHistory::MatchKind::None), static_cast<int>(withFallback.kind));
+        }
+
         TEST_METHOD (AppLastZoneInvalidWindow)
         {
             const auto layoutId = FancyZonesUtils::GuidFromString(L"{2FEC41DA-3A0B-4E31-9CE1-9473C65D99F2}").value();

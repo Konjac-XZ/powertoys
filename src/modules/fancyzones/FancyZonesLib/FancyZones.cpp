@@ -68,6 +68,18 @@ namespace NonLocalizable
     const wchar_t FZEditorExecutablePath[] = L"PowerToys.FancyZonesEditor.exe";
 }
 
+namespace
+{
+    constexpr std::array<UINT, 4> WindowCreatedRetryDelaysMs{ 100, 250, 500, 1000 };
+
+    constexpr bool IsWindowCreatedRetryable(FancyZonesWindowProcessing::ProcessabilityType type) noexcept
+    {
+        return type == FancyZonesWindowProcessing::ProcessabilityType::NotVisible ||
+               type == FancyZonesWindowProcessing::ProcessabilityType::Minimized ||
+               type == FancyZonesWindowProcessing::ProcessabilityType::NotCurrentVirtualDesktop;
+    }
+}
+
 struct FancyZones : public winrt::implements<FancyZones, IFancyZones, IFancyZonesCallback>, public SettingsObserver
 {
 public:
@@ -164,6 +176,8 @@ private:
     void UpdateHotkey(int hotkeyId, const PowerToysSettings::HotkeyObject& hotkeyObject, bool enable) noexcept;
     
     bool MoveToAppLastZone(HWND window, HMONITOR monitor, GUID currentVirtualDesktop) noexcept;
+    void ScheduleWindowCreatedRetry(HWND window, std::wstring_view reason) noexcept;
+    void ClearWindowCreatedRetry(HWND window) noexcept;
 
     void RefreshLayouts() noexcept;
     bool ShouldProcessSnapHotkey(DWORD vkCode) noexcept;
@@ -189,6 +203,7 @@ private:
     EventWaiter m_toggleEditorEventWaiter;
 
     std::unique_ptr<notifications::NotificationUtil> m_notificationUtil;
+    std::unordered_map<HWND, size_t> m_windowCreatedRetryAttempts;
 
     // If non-recoverable error occurs, trigger disabling of entire FancyZones.
     static std::function<void()> disableModuleCallback;
@@ -353,17 +368,39 @@ bool FancyZones::MoveToAppLastZone(HWND window, HMONITOR monitor, GUID currentVi
 {
     const auto& workAreas = m_workAreaConfiguration.GetAllWorkAreas();
     WorkArea* workArea{ nullptr };
-    ZoneIndexSet indexes{};
+
+    auto snapToWorkArea = [&](WorkArea* targetWorkArea) {
+        if (!targetWorkArea || targetWorkArea->UniqueId().virtualDesktopId != currentVirtualDesktop)
+        {
+            return false;
+        }
+
+        const auto match = AppZoneHistory::instance().GetAppLastZone(window, targetWorkArea->UniqueId(), targetWorkArea->GetLayoutId(), true);
+        if (match.kind == AppZoneHistory::MatchKind::None)
+        {
+            Logger::debug(L"App zone history not matched, work area: {}, reason: {}", targetWorkArea->UniqueId().toString(), static_cast<int>(match.reason));
+            return false;
+        }
+
+        Trace::FancyZones::SnapNewWindowIntoZone(targetWorkArea->GetLayout().get(), targetWorkArea->GetLayoutWindows());
+        const bool snapped = targetWorkArea->Snap(window, match.data.zoneIndexSet, true, WorkArea::HistoryUpdateMode::Skip);
+        if (!snapped)
+        {
+            Logger::warn(L"App zone history matched but snap failed, work area: {}, match kind: {}", targetWorkArea->UniqueId().toString(), static_cast<int>(match.kind));
+        }
+        else if (match.kind == AppZoneHistory::MatchKind::MonitorFallback)
+        {
+            Logger::info(L"Moved window to app zone history using monitor fallback");
+        }
+
+        return snapped;
+    };
 
     if (monitor)
     {    
         if (workAreas.contains(monitor))
         {
             workArea = workAreas.at(monitor).get();
-            if (workArea && workArea->UniqueId().virtualDesktopId == currentVirtualDesktop)
-            {
-                indexes = AppZoneHistory::instance().GetAppLastZoneIndexSet(window, workArea->UniqueId(), workArea->GetLayoutId());
-            }
         }
         else
         {
@@ -376,25 +413,50 @@ bool FancyZones::MoveToAppLastZone(HWND window, HMONITOR monitor, GUID currentVi
         {
             if (secondaryWorkArea && secondaryWorkArea->UniqueId().virtualDesktopId == currentVirtualDesktop)
             {
-                indexes = AppZoneHistory::instance().GetAppLastZoneIndexSet(window, secondaryWorkArea->UniqueId(), secondaryWorkArea->GetLayoutId());
                 workArea = secondaryWorkArea.get();
-                if (!indexes.empty())
+                if (snapToWorkArea(workArea))
                 {
-                    break;
+                    return true;
                 }
             }
         }
+
+        return false;
     }
     
-    if (!indexes.empty() && workArea)
-    {
-        Trace::FancyZones::SnapNewWindowIntoZone(workArea->GetLayout().get(), workArea->GetLayoutWindows());
-        workArea->Snap(window, indexes);
+    return snapToWorkArea(workArea);
+}
 
-        return true;
+void FancyZones::ScheduleWindowCreatedRetry(HWND window, std::wstring_view reason) noexcept
+{
+    if (!m_window || !IsWindow(window))
+    {
+        m_windowCreatedRetryAttempts.erase(window);
+        return;
     }
 
-    return false;
+    auto& retryAttempt = m_windowCreatedRetryAttempts[window];
+    if (retryAttempt >= WindowCreatedRetryDelaysMs.size())
+    {
+        Logger::debug(L"Stop retrying window created processing, hwnd = {}, reason = {}", reinterpret_cast<void*>(window), reason);
+        m_windowCreatedRetryAttempts.erase(window);
+        return;
+    }
+
+    const auto delay = WindowCreatedRetryDelaysMs[retryAttempt];
+    ++retryAttempt;
+    SetTimer(m_window, reinterpret_cast<UINT_PTR>(window), delay, nullptr);
+    Logger::debug(L"Retry window created processing, hwnd = {}, attempt = {}, delay = {} ms, reason = {}", reinterpret_cast<void*>(window), retryAttempt, delay, reason);
+}
+
+void FancyZones::ClearWindowCreatedRetry(HWND window) noexcept
+{
+    if (m_window)
+    {
+        KillTimer(m_window, reinterpret_cast<UINT_PTR>(window));
+    }
+
+    m_windowCreatedRetryAttempts.erase(window);
 }
 
 void FancyZones::WindowCreated(HWND window) noexcept
@@ -404,11 +466,28 @@ void FancyZones::WindowCreated(HWND window) noexcept
     if (!moveToAppLastZone && !openOnActiveMonitor)
     {
         // Nothing to do here then.
+        ClearWindowCreatedRetry(window);
         return;
     }
 
-    if (!FancyZonesWindowProcessing::IsProcessableAutomatically(window))
+    const auto processabilityType = FancyZonesWindowProcessing::DefineWindowType(window);
+    if (processabilityType != FancyZonesWindowProcessing::ProcessabilityType::Processable)
     {
+        if (IsWindowCreatedRetryable(processabilityType))
+        {
+            ScheduleWindowCreatedRetry(window, L"Window is not processable yet");
+        }
+        else
+        {
+            ClearWindowCreatedRetry(window);
+        }
+
+        return;
+    }
+
+    if (FancyZonesWindowProperties::IsLaunchedByWorkspaces(window))
+    {
+        ClearWindowCreatedRetry(window);
         return;
     }
 
@@ -416,6 +495,13 @@ void FancyZones::WindowCreated(HWND window) noexcept
     const bool isZoned = !FancyZonesWindowProperties::RetrieveZoneIndexProperty(window).empty();
     if (isZoned)
     {
+        ClearWindowCreatedRetry(window);
+        return;
+    }
+
+    if (m_workAreaConfiguration.GetAllWorkAreas().empty())
+    {
+        ScheduleWindowCreatedRetry(window, L"Work areas are not initialized");
         return;
     }
 
@@ -434,6 +520,12 @@ void FancyZones::WindowCreated(HWND window) noexcept
     {
         // Check if the app is excluded from the "move to last zone" feature
         std::wstring processPath = get_process_path_waiting_uwp(window);
+        if (processPath.empty())
+        {
+            ScheduleWindowCreatedRetry(window, L"Process path is empty");
+            return;
+        }
+
         CharUpperBuffW(const_cast<std::wstring&>(processPath).data(), static_cast<DWORD>(processPath.length()));
         bool isExcludedFromLastZone = check_excluded_app(window, processPath, FancyZonesSettings::settings().excludedFromLastZoneAppsArray);
 
@@ -476,6 +568,8 @@ void FancyZones::WindowCreated(HWND window) noexcept
             m_dpiUnawareThread.submit(OnThreadExecutor::task_t{ [&] { MonitorUtils::OpenWindowOnActiveMonitor(window, active); } }).wait();
         }
     }
+
+    ClearWindowCreatedRetry(window);
 }
 
 // IFancyZonesCallback
@@ -626,6 +720,14 @@ LRESULT FancyZones::WndProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
     {
         // Display resolution changed. Invalidate cached work-areas so they can be recreated with latest information.
         OnDisplayChange(DisplayChangeType::DisplayChange);
+    }
+    break;
+
+    case WM_TIMER:
+    {
+        auto hwnd = reinterpret_cast<HWND>(wparam);
+        KillTimer(m_window, wparam);
+        WindowCreated(hwnd);
     }
     break;
 

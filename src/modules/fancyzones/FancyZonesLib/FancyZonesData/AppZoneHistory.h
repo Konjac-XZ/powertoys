@@ -29,6 +29,29 @@ class AppZoneHistory
 public:
     using TAppZoneHistoryMap = std::unordered_map<std::wstring, std::vector<FancyZonesDataTypes::AppZoneHistoryData>>;
 
+    enum class MatchKind
+    {
+        None,
+        Exact,
+        MonitorFallback,
+    };
+
+    enum class MatchReason
+    {
+        Found,
+        ProcessPathEmpty,
+        AppHistoryNotFound,
+        LayoutMismatch,
+        WorkAreaMismatch,
+    };
+
+    struct MatchResult
+    {
+        MatchKind kind = MatchKind::None;
+        MatchReason reason = MatchReason::AppHistoryNotFound;
+        FancyZonesDataTypes::AppZoneHistoryData data{};
+    };
+
     static AppZoneHistory& instance();
 
     inline static std::wstring AppZoneHistoryFileName()
@@ -59,6 +82,8 @@ public:
 
     const TAppZoneHistoryMap& GetFullAppZoneHistory() const noexcept;
     std::optional<FancyZonesDataTypes::AppZoneHistoryData> GetZoneHistory(const std::wstring& appPath, const FancyZonesDataTypes::WorkAreaId& workAreaId) const noexcept;
+    MatchResult GetAppLastZone(HWND window, const FancyZonesDataTypes::WorkAreaId& workAreaId, const GUID& layoutId, bool allowMonitorFallback) const;
+    MatchResult GetAppLastZone(const std::wstring& appPath, const FancyZonesDataTypes::WorkAreaId& workAreaId, const GUID& layoutId, bool allowMonitorFallback) const;
 
     bool IsAnotherWindowOfApplicationInstanceZoned(HWND window, const FancyZonesDataTypes::WorkAreaId& workAreaId) const noexcept;
     ZoneIndexSet GetAppLastZoneIndexSet(HWND window, const FancyZonesDataTypes::WorkAreaId& workAreaId, const GUID& layoutId) const;

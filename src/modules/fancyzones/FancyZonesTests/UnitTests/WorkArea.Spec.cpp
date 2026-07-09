@@ -304,6 +304,23 @@ namespace FancyZonesUnitTests
             }
         }
 
+        TEST_METHOD (SnapCanSkipAppZoneHistoryUpdate)
+        {
+            const auto workArea = WorkArea::Create(m_hInst, m_workAreaId, m_parentUniqueId, m_workAreaRect);
+            const auto window = Mocks::WindowCreate(m_hInst);
+
+            const ZoneIndexSet expectedStamp = { 1, 2 };
+            Assert::IsTrue(workArea->Snap(window, expectedStamp, true, WorkArea::HistoryUpdateMode::Skip));
+
+            const auto processPath = get_process_path(window);
+            const auto history = AppZoneHistory::instance().GetZoneHistory(processPath, m_workAreaId);
+            Assert::IsFalse(history.has_value());
+
+            const auto actualStamp = FancyZonesWindowProperties::RetrieveZoneIndexProperty(window);
+            Assert::IsTrue(expectedStamp == actualStamp);
+            Assert::IsTrue(expectedStamp == workArea->GetLayoutWindows().GetZoneIndexSetFromWindow(window));
+        }
+
         TEST_METHOD (SnapLayoutAssignedWindowsTest)
         {
             const auto workArea = WorkArea::Create(m_hInst, m_workAreaId, m_parentUniqueId, m_workAreaRect);
