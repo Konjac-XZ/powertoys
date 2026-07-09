@@ -1,3 +1,0 @@
-[submodule "deps/cziplib"]
-	path = deps/cziplib
-	url = https://github.com/kuba--/zip.git

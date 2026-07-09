@@ -65,25 +65,6 @@ if ($Help) {
 # Ensure helpers are available
 . "$PSScriptRoot\build-common.ps1"
 
-function Test-ByteArrayEqual {
-    param (
-        [byte[]]$Left,
-        [byte[]]$Right
-    )
-
-    if ($Left.Length -ne $Right.Length) {
-        return $false
-    }
-
-    for ($i = 0; $i -lt $Left.Length; $i++) {
-        if ($Left[$i] -ne $Right[$i]) {
-            return $false
-        }
-    }
-
-    return $true
-}
-
 # Initialize Visual Studio dev environment
 if (-not (Ensure-VsDevEnvironment)) { exit 1 }
 
@@ -120,14 +101,6 @@ if (-not $repoRoot -or -not (Test-Path (Join-Path $repoRoot "PowerToys.slnx"))) 
 }
 
 Write-Host "PowerToys repository root detected: $repoRoot"
-
-$installerVNextDir = Join-Path $repoRoot "installer\PowerToysSetupVNext"
-$wxsSnapshots = @{}
-if (Test-Path $installerVNextDir) {
-    Get-ChildItem -Path $installerVNextDir -Filter "*.wxs" -File | ForEach-Object {
-        $wxsSnapshots[$_.FullName] = [System.IO.File]::ReadAllBytes($_.FullName)
-    }
-}
 
 # Safety check: avoid mixing build outputs with existing local changes unless the user confirms.
 if (-not $Force) {
@@ -271,7 +244,7 @@ try {
     if (Test-Path $setupScript) {
         & $setupScript -ProjectDirectory (Join-Path $repoRoot "src\modules\cmdpal") -Verbose
     } else {
-        Write-Warning "Could not find Setup.ps1 in $versionRoot. Continuing local installer build without Terminal versioning setup."
+        Write-Error "Could not find Setup.ps1 in $versionRoot"
     }
 
     # WiX v5 projects use WixToolset.Sdk via NuGet/MSBuild; no separate WiX installation is required.
@@ -418,9 +391,8 @@ try {
     }
 
     if (-not $SkipBuild) {
-        $toolBuildArgs = "$commonArgs /p:VcpkgManifestInstall=false"
-        RestoreThenBuild 'tools\BugReportTool\BugReportTool.sln' $toolBuildArgs $Platform $Configuration
-        RestoreThenBuild 'tools\StylesReportTool\StylesReportTool.sln' $toolBuildArgs $Platform $Configuration
+        RestoreThenBuild 'tools\BugReportTool\BugReportTool.sln' $commonArgs $Platform $Configuration
+        RestoreThenBuild 'tools\StylesReportTool\StylesReportTool.sln' $commonArgs $Platform $Configuration
     }
 
     # Set NUGET_PACKAGES environment variable if not set, to help wixproj find heat.exe
@@ -447,17 +419,7 @@ try {
     RunMSBuild 'installer\PowerToysSetup.slnx' "$commonArgs /m /t:PowerToysBootstrapperVNext /p:PerUser=$PerUser" $Platform $Configuration
 
 } finally {
-    foreach ($snapshot in $wxsSnapshots.GetEnumerator()) {
-        if (-not (Test-Path $snapshot.Key)) {
-            continue
-        }
-
-        $currentBytes = [System.IO.File]::ReadAllBytes($snapshot.Key)
-        if (-not (Test-ByteArrayEqual $currentBytes $snapshot.Value)) {
-            [System.IO.File]::WriteAllBytes($snapshot.Key, $snapshot.Value)
-            Write-Host "[WIX] Restored generated WXS file: $($snapshot.Key)"
-        }
-    }
+    # No git cleanup; leave workspace state as-is.
 }
 
 Write-Host '[PIPELINE] Completed'
