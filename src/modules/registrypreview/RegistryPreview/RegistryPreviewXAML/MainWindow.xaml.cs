@@ -4,9 +4,9 @@
 
 using System;
 using ManagedCommon;
+using Microsoft.PowerToys.Common.UI.Controls.Window;
 using Microsoft.PowerToys.Telemetry;
 using Microsoft.UI;
-using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -46,7 +46,16 @@ namespace RegistryPreview
             IntPtr windowHandle = this.GetWindowHandle();
             WindowHelpers.ForceTopBorder1PixelInsetOnWindows10(windowHandle);
             SetTitleBar(titleBar);
+            TitleBarHelper.SetPreferredTheme(this);
+
             AppWindow.SetIcon("Assets\\RegistryPreview\\RegistryPreview.ico");
+
+            // Ensure a non-empty window title before the title bar's first layout reads it.
+            // UpdateWindowTitle() only runs later (on file load), so without this the native
+            // window title would be empty during startup, which can fault the WinUI TitleBar
+            // control while it reads AppWindow.Title during a deferred layout pass.
+            titleBar.Title = APPNAME;
+            AppWindow.Title = APPNAME;
 
             // if have settings, update the location of the window
             if (jsonWindowPlacement != null)

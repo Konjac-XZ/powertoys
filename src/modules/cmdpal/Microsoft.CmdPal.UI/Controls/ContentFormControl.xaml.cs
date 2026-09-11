@@ -4,17 +4,21 @@
 
 using AdaptiveCards.ObjectModel.WinUI3;
 using AdaptiveCards.Rendering.WinUI3;
+using Microsoft.CmdPal.UI.Controls.AdaptiveCards;
 using Microsoft.CmdPal.UI.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Windows.System;
 
 namespace Microsoft.CmdPal.UI.Controls;
 
 public sealed partial class ContentFormControl : UserControl
 {
     private static readonly AdaptiveCardRenderer _renderer;
+    private static bool _customElementsRegistered;
     private ContentFormViewModel? _viewModel;
 
     // LOAD-BEARING: if you don't hang onto a reference to the RenderedAdaptiveCard
@@ -22,6 +26,7 @@ public sealed partial class ContentFormControl : UserControl
     // tree. If this gets GC'ed, then it'll revoke our Action handler, and the
     // form will do seemingly nothing.
     private RenderedAdaptiveCard? _renderedCard;
+    private AdaptiveCard? _adaptiveCard;
 
     public ContentFormViewModel? ViewModel { get => _viewModel; set => AttachViewModel(value); }
 
@@ -34,6 +39,32 @@ public sealed partial class ContentFormControl : UserControl
         {
             OverrideStyles = null,
         };
+    }
+
+    internal static void RegisterCustomElements()
+    {
+        if (_customElementsRegistered)
+        {
+            return;
+        }
+
+        Register<AdaptiveStringListInputElement, AdaptiveStringListInputElementParser, AdaptiveStringListInputElementRenderer>();
+        Register<AdaptiveFilePathListInputElement, AdaptiveFilePathListInputElementParser, AdaptiveFilePathListInputElementRenderer>();
+        Register<AdaptiveKeyValueListInputElement, AdaptiveKeyValueListInputElementParser, AdaptiveKeyValueListInputElementRenderer>();
+        Register<AdaptiveFilePathInputElement, AdaptiveFilePathInputElementParser, AdaptiveFilePathInputElementRenderer>();
+
+        _customElementsRegistered = true;
+
+        return;
+
+        static void Register<TElement, TParser, TRenderer>()
+            where TElement : IAdaptiveCardElement, ICustomAdaptiveCardElement
+            where TParser : IAdaptiveElementParser, new()
+            where TRenderer : IAdaptiveElementRenderer, new()
+        {
+            AdaptiveCardParserRegistrations.ElementParsers.Set(TElement.CustomInputType, new TParser());
+            _renderer.ElementRenderers.Set(TElement.CustomInputType, new TRenderer());
+        }
     }
 
     public ContentFormControl()
@@ -95,9 +126,11 @@ public sealed partial class ContentFormControl : UserControl
     private void DisplayCard(AdaptiveCardParseResult result)
     {
         _renderedCard = _renderer.RenderAdaptiveCard(result.AdaptiveCard);
+        _adaptiveCard = result.AdaptiveCard;
         ContentGrid.Children.Clear();
         if (_renderedCard.FrameworkElement is not null)
         {
+            _renderedCard.FrameworkElement.KeyDown += OnFormKeyDown;
             ContentGrid.Children.Add(_renderedCard.FrameworkElement);
 
             // Use the Loaded event to ensure we focus after the card is in the visual tree
@@ -114,8 +147,9 @@ public sealed partial class ContentFormControl : UserControl
 
     private void OnFrameworkElementLayoutUpdated(object? sender, object e)
     {
-        // Only fix once — unhook after first layout pass
-        if (_renderedCard?.FrameworkElement is FrameworkElement element)
+        // Only fix once — unhook from sender (not _renderedCard, which may have been
+        // reassigned by the time this fires).
+        if (sender is FrameworkElement element)
         {
             element.LayoutUpdated -= OnFrameworkElementLayoutUpdated;
             FixToggleAccessibilityNames(element);
@@ -274,6 +308,50 @@ public sealed partial class ContentFormControl : UserControl
         }
 
         return null;
+    }
+
+    private void OnFormKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        // Snapshot the fields so a subsequent DisplayCard call can't swap the
+        // rendered/parsed card out from under us mid-method. This keeps the
+        // resolved submit action and the gathered inputs from the same card.
+        var renderedCard = _renderedCard;
+        var adaptiveCard = _adaptiveCard;
+
+        if (e.Key != VirtualKey.Enter || renderedCard == null || adaptiveCard == null)
+        {
+            return;
+        }
+
+        // Only submit when Enter is pressed inside a single-line TextBox
+        if (e.OriginalSource is TextBox textBox && !textBox.AcceptsReturn)
+        {
+            // Find the first Submit or Execute action on the card
+            IAdaptiveActionElement? submitAction = null;
+            foreach (var action in adaptiveCard.Actions)
+            {
+                if (action is AdaptiveSubmitAction or AdaptiveExecuteAction)
+                {
+                    submitAction = action;
+                    break;
+                }
+            }
+
+            if (submitAction != null)
+            {
+                e.Handled = true;
+
+                // Validate (and gather) the inputs before submitting. AsJson() only
+                // returns the values cached by a successful ValidateInputs() call, so
+                // skipping this would submit an empty payload. This mirrors what the
+                // renderer does internally when a submit button is clicked.
+                var inputs = renderedCard.UserInputs;
+                if (inputs.ValidateInputs(submitAction))
+                {
+                    ViewModel?.HandleSubmit(submitAction, inputs.AsJson());
+                }
+            }
+        }
     }
 
     private void Rendered_Action(RenderedAdaptiveCard sender, AdaptiveActionEventArgs args) =>

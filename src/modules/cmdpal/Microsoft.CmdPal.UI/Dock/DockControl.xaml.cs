@@ -19,9 +19,11 @@ using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
+using Windows.System;
 
 using RS_ = Microsoft.CmdPal.UI.Helpers.ResourceLoaderInstance;
 
@@ -38,6 +40,14 @@ public sealed partial class DockControl : UserControl, IRecipient<CloseContextMe
     /// Used to target palette-show messages to the correct DockWindow in multi-monitor setups.
     /// </summary>
     internal IntPtr OwnerHwnd { get; set; }
+
+    internal bool HasOpenTransientUi =>
+        ContextMenuFlyout.IsOpen ||
+        AddBandFlyout.IsOpen ||
+        EditModeContextMenu.IsOpen ||
+        EditButtonsTeachingTip.IsOpen;
+
+    internal bool IsDragOperationActive => _draggedBand is not null;
 
     public static readonly DependencyProperty ItemsOrientationProperty =
         DependencyProperty.Register(nameof(ItemsOrientation), typeof(Orientation), typeof(DockControl), new PropertyMetadata(Orientation.Horizontal));
@@ -295,19 +305,43 @@ public sealed partial class DockControl : UserControl, IRecipient<CloseContextMe
     private void BandItem_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
     {
         // Ignore clicks when in edit mode - allow drag behavior instead
-        if (IsEditMode)
+        if (TryInvokeBandItem(sender))
+        {
+            e.Handled = true;
+        }
+    }
+
+    private void BandItem_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        // Tapped only fires for pointer input, so keyboard focus + Enter/Space
+        // never invoked a dock item. This is the keyboard side of BandItem_Tapped.
+        if (IsEditMode || (e.Key != VirtualKey.Enter && e.Key != VirtualKey.Space))
         {
             return;
         }
 
-        if (sender is DockItemControl dockItem && dockItem.DataContext is DockBandViewModel band && dockItem.Tag is DockItemViewModel item)
+        if (TryInvokeBandItem(sender))
         {
-            // Use the center of the border as the point to open at
-            var borderCenter = GetDockItemCenter(dockItem);
-
-            InvokeItem(item, borderCenter);
             e.Handled = true;
         }
+    }
+
+    private bool TryInvokeBandItem(object sender)
+    {
+        if (IsEditMode)
+        {
+            return false;
+        }
+
+        if (sender is not DockItemControl dockItem || dockItem.Tag is not DockItemViewModel item)
+        {
+            return false;
+        }
+
+        // Use the center of the border as the point to open at.
+        var borderCenter = GetDockItemCenter(dockItem);
+        InvokeItem(item, borderCenter);
+        return true;
     }
 
     private ContextMenuFilterLocation GetDockContextMenuFilterLocation()
@@ -492,9 +526,10 @@ public sealed partial class DockControl : UserControl, IRecipient<CloseContextMe
 
     private void ContextMenuFlyout_Opened(object sender, object e)
     {
-        // We need to wait until our flyout is opened to try and toss focus
-        // at its search box. The control isn't in the UI tree before that
+        // Focus the filter box so the flyout captures keyboard input,
+        // then fire a single consolidated Narrator announcement.
         ContextControl.FocusSearchBox();
+        ContextControl.AnnounceOpened();
     }
 
     public void Receive(CloseContextMenuMessage message)

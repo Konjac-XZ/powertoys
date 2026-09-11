@@ -50,8 +50,10 @@ public partial class ListItemViewModel : CommandItemViewModel
         get;
         set
         {
-            if (SetProperty(ref field, value))
+            if (field != value)
             {
+                field = value;
+                UpdateProperty(nameof(LayoutShowsTitle));
                 UpdateShowsTitle();
             }
         }
@@ -62,8 +64,10 @@ public partial class ListItemViewModel : CommandItemViewModel
         get;
         set
         {
-            if (SetProperty(ref field, value))
+            if (field != value)
             {
+                field = value;
+                UpdateProperty(nameof(LayoutShowsSubtitle));
                 UpdateShowsSubtitle();
             }
         }
@@ -158,11 +162,13 @@ public partial class ListItemViewModel : CommandItemViewModel
                 UpdateProperty(nameof(Type), nameof(IsInteractive));
                 break;
             case nameof(Details):
+                var existingReference = Details;
                 var extensionDetails = model.Details;
                 Details = extensionDetails is not null ? new(extensionDetails, PageContext) : null;
                 Details?.InitializeProperties();
                 UpdateProperty(nameof(Details), nameof(HasDetails));
                 UpdateShowDetailsCommand();
+                existingReference?.SafeCleanup();
                 break;
             case nameof(model.MoreCommands):
                 AddShowDetailsCommands();
@@ -346,6 +352,8 @@ public partial class ListItemViewModel : CommandItemViewModel
 
     protected override void UnsafeCleanup()
     {
+        CleanupInitializationState();
+
         base.UnsafeCleanup();
 
         // Tags don't have event handlers or anything to cleanup
