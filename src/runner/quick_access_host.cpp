@@ -189,7 +189,6 @@ namespace QuickAccessHost
             qa_caller_policy.expectedDirectory = get_module_folderpath() + L"\\WinUI3Apps";
             qa_caller_policy.allowedBasenames = { L"PowerToys.QuickAccess.exe" };
             qa_caller_policy.expectedVersion = interop_auth::GetOwnModuleVersion();
-            qa_caller_policy.requireMicrosoftSignature = true;
             qa_caller_policy.logReject = [](const interop_auth::AuthResult& r) {
                 Logger::warn(L"Rejected unauthenticated Quick Access pipe client: pid={} image='{}' reason={}",
                              r.pid,

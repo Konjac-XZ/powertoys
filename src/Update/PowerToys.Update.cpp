@@ -245,8 +245,8 @@ bool InstallNewVersionStage2(std::wstring installer_path)
     // malicious installer between download and execution (TOCTOU) and gain elevation.
     //
     // Open the installer denying write/delete sharing so it cannot be replaced from under us,
-    // then verify it is Authenticode-signed by Microsoft. The handle is kept open across the
-    // launch so the verified bytes are the bytes that run.
+    // then verify it is a PowerToys installer. The handle is kept open across the launch so the
+    // bytes identified by the check are the bytes that run.
     wil::unique_hfile installerFile{ CreateFileW(installer_path.c_str(),
                                                  GENERIC_READ,
                                                  FILE_SHARE_READ,

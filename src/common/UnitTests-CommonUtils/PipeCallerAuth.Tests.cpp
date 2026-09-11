@@ -130,7 +130,6 @@ namespace UnitTestsCommonUtils
             policy.expectedDirectory = DirOf(exe);
             policy.allowedBasenames = { BaseOf(exe) };
             policy.expectedVersion = 0; // skip version match
-            policy.requireMicrosoftSignature = false; // test host is not Microsoft-signed
 
             interop_auth::VerificationCache cache;
             const auto res = interop_auth::AuthenticateClient(cp.server, policy, cache);
@@ -150,7 +149,6 @@ namespace UnitTestsCommonUtils
             policy.enabled = true;
             policy.expectedDirectory = DirOf(exe);
             policy.allowedBasenames = { L"definitely_not_the_test_host.exe" };
-            policy.requireMicrosoftSignature = false;
 
             bool logged = false;
             policy.logReject = [&](const interop_auth::AuthResult&) { logged = true; };
@@ -173,7 +171,6 @@ namespace UnitTestsCommonUtils
             policy.enabled = true;
             policy.expectedDirectory = L"C:\\Windows\\System32"; // not where the test host lives
             policy.allowedBasenames = { BaseOf(exe) };
-            policy.requireMicrosoftSignature = false;
 
             interop_auth::VerificationCache cache;
             const auto res = interop_auth::AuthenticateClient(cp.server, policy, cache);
@@ -192,7 +189,6 @@ namespace UnitTestsCommonUtils
             acceptPolicy.enabled = true;
             acceptPolicy.expectedDirectory = DirOf(exe);
             acceptPolicy.allowedBasenames = { BaseOf(exe) };
-            acceptPolicy.requireMicrosoftSignature = false;
 
             interop_auth::CallerPolicy rejectPolicy = acceptPolicy;
             rejectPolicy.allowedBasenames = { L"not_the_test_host.exe" };

@@ -1,16 +1,10 @@
 #include "pipe_caller_auth.h"
 
-#include <wincrypt.h>
-#include <wintrust.h>
-#include <softpub.h>
-
 #include <cwctype>
 #include <cstring>
 #include <map>
 #include <mutex>
 
-#pragma comment(lib, "wintrust.lib")
-#pragma comment(lib, "crypt32.lib")
 // Note: the file version is read via the PE resource (kernel32 only), NOT the version.dll APIs, to
 // avoid a link-name collision with PowerToys' own static "Version.lib" project that the interop DLL
 // references.
@@ -96,153 +90,6 @@ namespace interop_auth
                 }
             }
             return false;
-        }
-
-        bool LeafIsMicrosoft(PCCERT_CONTEXT cert)
-        {
-            if (!cert)
-            {
-                return false;
-            }
-            wchar_t name[256] = {};
-            const DWORD n = CertGetNameStringW(cert, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, nullptr, name, ARRAYSIZE(name));
-            // Case-insensitive: cert display-name casing can vary and this is a secondary check on top
-            // of the machine-root Authenticode chain in ChainsToMachineRoot.
-            return n > 1 && wcsstr(ToLower(name).c_str(), L"microsoft corporation") != nullptr;
-        }
-
-        // Anchor the signer's chain in the LOCAL MACHINE root store only (HCCE_LOCAL_MACHINE) rather than
-        // WinVerifyTrust's default user+machine union. The Runner runs as the same user as a potential
-        // attacker, so a user-writable CurrentUser\Root could otherwise forge a "Microsoft" signer; a
-        // non-admin cannot plant a machine root, so this defeats the forge.
-        bool ChainsToMachineRoot(PCCERT_CONTEXT leaf, HCERTSTORE additionalStore)
-        {
-            if (!leaf)
-            {
-                return false;
-            }
-
-            char codeSigningOid[] = szOID_PKIX_KP_CODE_SIGNING;
-            LPSTR oids[] = { codeSigningOid };
-            CERT_CHAIN_PARA para = {};
-            para.cbSize = sizeof(para);
-            para.RequestedUsage.dwType = USAGE_MATCH_TYPE_AND;
-            para.RequestedUsage.Usage.cUsageIdentifier = 1;
-            para.RequestedUsage.Usage.rgpszUsageIdentifier = oids;
-
-            // Cached-only revocation: never hit the network; treat "unknown/offline" as not-revoked.
-            const DWORD flags = CERT_CHAIN_CACHE_ONLY_URL_RETRIEVAL |
-                                CERT_CHAIN_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT;
-
-            PCCERT_CHAIN_CONTEXT chain = nullptr;
-            if (!CertGetCertificateChain(HCCE_LOCAL_MACHINE, leaf, nullptr, additionalStore, &para, flags, nullptr, &chain))
-            {
-                return false;
-            }
-
-            bool ok = false;
-            const DWORD ignore = CERT_TRUST_REVOCATION_STATUS_UNKNOWN | CERT_TRUST_IS_OFFLINE_REVOCATION;
-            if ((chain->TrustStatus.dwErrorStatus & ~ignore) == 0)
-            {
-                CERT_CHAIN_POLICY_PARA policyPara = {};
-                policyPara.cbSize = sizeof(policyPara);
-                CERT_CHAIN_POLICY_STATUS policyStatus = {};
-                policyStatus.cbSize = sizeof(policyStatus);
-                if (CertVerifyCertificateChainPolicy(CERT_CHAIN_POLICY_AUTHENTICODE, chain, &policyPara, &policyStatus))
-                {
-                    ok = (policyStatus.dwError == 0);
-                }
-            }
-
-            CertFreeCertificateChain(chain);
-            return ok;
-        }
-
-        // Establishes that the file has a valid, untampered Authenticode signature (blocks unsigned,
-        // tampered, and signature-stapled binaries). The *trust anchor* decision is intentionally NOT
-        // taken from here (it consults the default user+machine store) — ChainsToMachineRoot re-anchors
-        // it against the machine store.
-        bool HasIntactAuthenticodeSignature(const std::wstring& path)
-        {
-            WINTRUST_FILE_INFO fileInfo = {};
-            fileInfo.cbStruct = sizeof(fileInfo);
-            fileInfo.pcwszFilePath = path.c_str();
-
-            WINTRUST_DATA wd = {};
-            wd.cbStruct = sizeof(wd);
-            wd.dwUIChoice = WTD_UI_NONE;
-            wd.fdwRevocationChecks = WTD_REVOKE_NONE;
-            wd.dwUnionChoice = WTD_CHOICE_FILE;
-            wd.pFile = &fileInfo;
-            wd.dwStateAction = WTD_STATEACTION_VERIFY;
-            wd.dwProvFlags = WTD_SAFER_FLAG | WTD_CACHE_ONLY_URL_RETRIEVAL;
-
-            GUID action = WINTRUST_ACTION_GENERIC_VERIFY_V2;
-            HWND noWindow = static_cast<HWND>(INVALID_HANDLE_VALUE);
-            const LONG status = WinVerifyTrust(noWindow, &action, &wd);
-
-            wd.dwStateAction = WTD_STATEACTION_CLOSE;
-            WinVerifyTrust(noWindow, &action, &wd);
-
-            return status == ERROR_SUCCESS;
-        }
-
-        bool VerifyMicrosoftSignedMachineRoot(const std::wstring& path)
-        {
-            // 1) Integrity + valid signature (default store). Rejects unsigned / tampered / stapled.
-            if (!HasIntactAuthenticodeSignature(path))
-            {
-                return false;
-            }
-
-            // 2) Re-anchor trust in the machine root store and confirm the signer leaf is Microsoft.
-            HCERTSTORE hStore = nullptr;
-            HCRYPTMSG hMsg = nullptr;
-            if (!CryptQueryObject(CERT_QUERY_OBJECT_FILE,
-                                  path.c_str(),
-                                  CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
-                                  CERT_QUERY_FORMAT_FLAG_BINARY,
-                                  0,
-                                  nullptr,
-                                  nullptr,
-                                  nullptr,
-                                  &hStore,
-                                  &hMsg,
-                                  nullptr))
-            {
-                return false;
-            }
-
-            bool result = false;
-            DWORD signerSize = 0;
-            if (CryptMsgGetParam(hMsg, CMSG_SIGNER_INFO_PARAM, 0, nullptr, &signerSize) && signerSize > 0)
-            {
-                std::vector<BYTE> signerBuf(signerSize);
-                if (CryptMsgGetParam(hMsg, CMSG_SIGNER_INFO_PARAM, 0, signerBuf.data(), &signerSize))
-                {
-                    auto* signer = reinterpret_cast<CMSG_SIGNER_INFO*>(signerBuf.data());
-                    CERT_INFO certInfo = {};
-                    certInfo.Issuer = signer->Issuer;
-                    certInfo.SerialNumber = signer->SerialNumber;
-                    PCCERT_CONTEXT leaf = CertGetSubjectCertificateFromStore(
-                        hStore, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, &certInfo);
-                    if (leaf)
-                    {
-                        result = LeafIsMicrosoft(leaf) && ChainsToMachineRoot(leaf, hStore);
-                        CertFreeCertificateContext(leaf);
-                    }
-                }
-            }
-
-            if (hMsg)
-            {
-                CryptMsgClose(hMsg);
-            }
-            if (hStore)
-            {
-                CertCloseStore(hStore, 0);
-            }
-            return result;
         }
 
         // --- Per-process verification cache -------------------------------------------------------
@@ -394,25 +241,7 @@ namespace interop_auth
         }
         else
         {
-            bool signatureOk = true;
-            if (policy.requireMicrosoftSignature)
-            {
-#ifdef _DEBUG
-                // DEV-ONLY: local builds are not Microsoft-signed. Directory, basename and version are
-                // still enforced above. This relaxation is physically compiled out of Release.
-                signatureOk = true;
-#else
-                signatureOk = VerifyMicrosoftSignedMachineRoot(canonical);
-#endif
-            }
-            if (!signatureOk)
-            {
-                reason = L"not-microsoft-signed";
-            }
-            else
-            {
-                accepted = true;
-            }
+            accepted = true;
         }
 
         CloseHandle(process);

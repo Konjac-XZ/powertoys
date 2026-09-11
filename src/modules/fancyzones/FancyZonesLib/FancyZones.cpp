@@ -369,6 +369,7 @@ private:
 
     std::unique_ptr<notifications::NotificationUtil> m_notificationUtil;
     std::unordered_map<HWND, size_t> m_windowCreatedRetryAttempts;
+    std::unordered_map<HWND, UINT_PTR> m_windowCreatedRetryTimerIds;
 
     // If non-recoverable error occurs, trigger disabling of entire FancyZones.
     static std::function<void()> disableModuleCallback;
@@ -610,7 +611,14 @@ void FancyZones::ScheduleWindowCreatedRetry(HWND window, std::wstring_view reaso
 {
     if (!m_window || !IsWindow(window))
     {
-        m_windowCreatedRetryAttempts.erase(window);
+        ClearWindowCreatedRetry(window);
+        return;
+    }
+
+    // WinEvents can report CREATE, SHOW, and UNCLOAKED for the same window. Keep
+    // one outstanding timer so those notifications do not consume retry budget.
+    if (m_windowCreatedRetryTimerIds.contains(window))
+    {
         return;
     }
 
@@ -623,18 +631,31 @@ void FancyZones::ScheduleWindowCreatedRetry(HWND window, std::wstring_view reaso
     }
 
     const auto delay = WindowCreatedRetryDelaysMs[retryAttempt];
+    const auto timerId = SetTimer(m_window, reinterpret_cast<UINT_PTR>(window), delay, nullptr);
+    if (timerId == 0)
+    {
+        Logger::warn(L"Failed to schedule window created retry, hwnd = {}, reason = {}", reinterpret_cast<void*>(window), reason);
+        m_windowCreatedRetryAttempts.erase(window);
+        return;
+    }
+
     ++retryAttempt;
-    SetTimer(m_window, reinterpret_cast<UINT_PTR>(window), delay, nullptr);
+    m_windowCreatedRetryTimerIds[window] = timerId;
     Logger::debug(L"Retry window created processing, hwnd = {}, attempt = {}, delay = {} ms, reason = {}", reinterpret_cast<void*>(window), retryAttempt, delay, reason);
 }
 
 void FancyZones::ClearWindowCreatedRetry(HWND window) noexcept
 {
-    if (m_window)
+    const auto timer = m_windowCreatedRetryTimerIds.find(window);
+    if (m_window && timer != m_windowCreatedRetryTimerIds.end())
     {
-        KillTimer(m_window, reinterpret_cast<UINT_PTR>(window));
+        KillTimer(m_window, timer->second);
     }
 
+    if (timer != m_windowCreatedRetryTimerIds.end())
+    {
+        m_windowCreatedRetryTimerIds.erase(timer);
+    }
     m_windowCreatedRetryAttempts.erase(window);
 }
 
@@ -694,19 +715,23 @@ void FancyZones::WindowCreated(HWND window) noexcept
     }
 
     bool windowMovedToZone = false;
+    bool shouldRetryWindowCreated = false;
     auto currentVirtualDesktop = VirtualDesktop::instance().GetCurrentVirtualDesktopIdFromRegistry();
     if (moveToAppLastZone)
     {
         // Check if the app is excluded from the "move to last zone" feature
         std::wstring processPath = get_process_path_waiting_uwp(window);
-        if (processPath.empty())
+        bool isExcludedFromLastZone = false;
+        if (!processPath.empty())
         {
-            ScheduleWindowCreatedRetry(window, L"Process path is empty");
-            return;
+            CharUpperBuffW(const_cast<std::wstring&>(processPath).data(), static_cast<DWORD>(processPath.length()));
+            isExcludedFromLastZone = check_excluded_app(window, processPath, FancyZonesSettings::settings().excludedFromLastZoneAppsArray);
         }
-
-        CharUpperBuffW(const_cast<std::wstring&>(processPath).data(), static_cast<DWORD>(processPath.length()));
-        bool isExcludedFromLastZone = check_excluded_app(window, processPath, FancyZonesSettings::settings().excludedFromLastZoneAppsArray);
+        else
+        {
+            shouldRetryWindowCreated = true;
+            ScheduleWindowCreatedRetry(window, L"Process path is empty");
+        }
 
         if (!isExcludedFromLastZone)
         {
@@ -748,7 +773,10 @@ void FancyZones::WindowCreated(HWND window) noexcept
         }
     }
 
-    ClearWindowCreatedRetry(window);
+    if (!shouldRetryWindowCreated)
+    {
+        ClearWindowCreatedRetry(window);
+    }
 }
 
 // IFancyZonesCallback
@@ -1006,9 +1034,34 @@ LRESULT FancyZones::WndProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 
     case WM_TIMER:
     {
-        auto hwnd = reinterpret_cast<HWND>(wparam);
-        KillTimer(m_window, wparam);
-        WindowCreated(hwnd);
+        if (wparam == MonitorRotationCommitTimerId)
+        {
+            KillTimer(m_window, MonitorRotationCommitTimerId);
+            if (m_pendingMonitorRotationReverse.has_value())
+            {
+                const bool reverse = *m_pendingMonitorRotationReverse;
+                const bool shouldShowCommitPreview = m_monitorRotationPreviewActive && IsMonitorRotationChordDown();
+                m_pendingMonitorRotationReverse.reset();
+                RotateWindowsAcrossMonitors(reverse);
+                RotateMonitorRotationContentNumbers(reverse);
+                if (shouldShowCommitPreview)
+                {
+                    ShowMonitorRotationPreview();
+                }
+            }
+            break;
+        }
+
+        const auto retryTimer = std::find_if(m_windowCreatedRetryTimerIds.begin(), m_windowCreatedRetryTimerIds.end(), [wparam](const auto& entry) {
+            return entry.second == wparam;
+        });
+        if (retryTimer != m_windowCreatedRetryTimerIds.end())
+        {
+            const auto hwnd = retryTimer->first;
+            m_windowCreatedRetryTimerIds.erase(retryTimer);
+            KillTimer(m_window, wparam);
+            WindowCreated(hwnd);
+        }
     }
     break;
 
@@ -1095,6 +1148,7 @@ LRESULT FancyZones::WndProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         else if (message == WM_PRIV_WINDOWDESTROYED)
         {
             auto hwnd = reinterpret_cast<HWND>(wparam);
+            ClearWindowCreatedRetry(hwnd);
             // If the destroyed window was being dragged, abort the drag without
             // snapping. Calling MoveSizeEnd() here would snap the now-destroyed
             // HWND into a zone and corrupt the layout state.
@@ -1147,22 +1201,6 @@ LRESULT FancyZones::WndProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
             {
                 m_pendingMonitorRotationReverse.reset();
                 ShowMonitorRotationPreview();
-            }
-        }
-        else if (message == WM_TIMER && wparam == MonitorRotationCommitTimerId)
-        {
-            KillTimer(m_window, MonitorRotationCommitTimerId);
-            if (m_pendingMonitorRotationReverse.has_value())
-            {
-                const bool reverse = *m_pendingMonitorRotationReverse;
-                const bool shouldShowCommitPreview = m_monitorRotationPreviewActive && IsMonitorRotationChordDown();
-                m_pendingMonitorRotationReverse.reset();
-                RotateWindowsAcrossMonitors(reverse);
-                RotateMonitorRotationContentNumbers(reverse);
-                if (shouldShowCommitPreview)
-                {
-                    ShowMonitorRotationPreview();
-                }
             }
         }
         else if (message == WM_PRIV_SETTINGS_CHANGED)

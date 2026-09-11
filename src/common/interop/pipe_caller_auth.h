@@ -44,10 +44,6 @@ namespace interop_auth
         // Runner's own file version; caller must match exactly (anti-downgrade). 0 disables the check.
         unsigned long long expectedVersion = 0;
 
-        // Require a machine-root-anchored Microsoft Authenticode signature. Compiled out in Debug builds
-        // (local binaries are unsigned) while directory/basename/version stay enforced.
-        bool requireMicrosoftSignature = true;
-
         // Optional sink invoked once per rejected process instance (deduped via the per-process cache).
         // The Runner supplies a lambda that logs via its own Logger; interop itself has no logger.
         std::function<void(const AuthResult&)> logReject;

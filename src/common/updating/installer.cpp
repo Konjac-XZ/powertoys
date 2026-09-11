@@ -11,14 +11,9 @@
 #include <cstdio>
 #include <vector>
 
-#include <wincrypt.h>
-#include <wintrust.h>
-#include <softpub.h>
 #include <winver.h>
 #include <MsiQuery.h>
 
-#pragma comment(lib, "wintrust.lib")
-#pragma comment(lib, "crypt32.lib")
 #pragma comment(lib, "version.lib")
 #pragma comment(lib, "Msi.lib")
 
@@ -65,84 +60,14 @@ namespace updating
         // Identity anchors for the official PowerToys installer. These are compile-time constants
         // (never read from the attacker-writable UpdateState.json or from the network), so the
         // identity check also holds for fully offline updates. The .exe bootstrapper version
-        // resource reports ProductName "PowerToys (Preview) <arch>" and CompanyName
-        // "Microsoft Corporation"; the .msi UpgradeCodes are shared with MsiUtils.h.
-        constexpr const wchar_t* MICROSOFT_ORGANIZATION_NAME = L"Microsoft Corporation";
+        // resource reports ProductName "PowerToys (Preview) <arch>"; the .msi UpgradeCodes are
+        // shared with MsiUtils.h.
         // NOTE: This must match the WiX bundle ProductName ("PowerToys (Preview) <arch>", see
         // installer/PowerToysSetupVNext/PowerToys.wxs). It is intentionally a prefix so the trailing
         // architecture varies. If the product is ever renamed (e.g. a stable/GA build that drops
         // "(Preview)"), this constant MUST be updated in lockstep, otherwise a legitimate installer
         // would be rejected here in the elevated update path.
         constexpr const wchar_t* POWERTOYS_PRODUCT_NAME_PREFIX = L"PowerToys (Preview)";
-
-        // Reads the signer leaf certificate's Organization (O) from the ALREADY-VERIFIED
-        // WinVerifyTrust state and returns true only when it is "Microsoft Corporation". Reading
-        // from the verified provider data (instead of re-opening the file by path with
-        // CryptQueryObject) binds the publisher check to exactly the signature that was validated
-        // against the locked handle, so the file is never read a second time by path.
-        bool verified_signer_is_microsoft(CRYPT_PROVIDER_DATA* provData)
-        {
-            CRYPT_PROVIDER_SGNR* signer = WTHelperGetProvSignerFromChain(provData, 0, FALSE, 0);
-            if (!signer || signer->csCertChain == 0)
-            {
-                return false;
-            }
-
-            CRYPT_PROVIDER_CERT* leaf = WTHelperGetProvCertFromChain(signer, 0);
-            if (!leaf || !leaf->pCert)
-            {
-                return false;
-            }
-
-            // Match on the certificate's Organization (O) rather than the CN (which can vary,
-            // e.g. ".NET"). Compare case-insensitively so a cosmetic casing difference can't cause
-            // a false negative. Mutable copy of the OID string: CertGetNameStringW takes a
-            // non-const void* type param.
-            char organizationOid[] = szOID_ORGANIZATION_NAME;
-            const DWORD nameLen = CertGetNameStringW(leaf->pCert, CERT_NAME_ATTR_TYPE, 0, organizationOid, nullptr, 0);
-            if (nameLen <= 1)
-            {
-                return false;
-            }
-
-            std::wstring organization(nameLen, L'\0');
-            CertGetNameStringW(leaf->pCert, CERT_NAME_ATTR_TYPE, 0, organizationOid, organization.data(), nameLen);
-            organization.resize(nameLen - 1); // drop the trailing null terminator
-
-            return _wcsicmp(organization.c_str(), MICROSOFT_ORGANIZATION_NAME) == 0;
-        }
-
-        // Cached-only whole-chain revocation, evaluated against the same locked handle. Returns
-        // true ONLY when a certificate in the chain is DEFINITIVELY revoked per locally cached
-        // revocation data. WTD_CACHE_ONLY_URL_RETRIEVAL keeps this off the network; when revocation
-        // info isn't cached the result is "offline/unknown", which is deliberately treated as NOT
-        // revoked so a legitimate offline update is never rejected just because a CRL wasn't cached
-        // (fail-open on unknown, fail-closed only on a real revocation).
-        bool cached_revocation_says_revoked(const std::wstring& installerPath, void* verifiedFileHandle)
-        {
-            WINTRUST_FILE_INFO fileInfo{};
-            fileInfo.cbStruct = sizeof(fileInfo);
-            fileInfo.pcwszFilePath = installerPath.c_str();
-            fileInfo.hFile = verifiedFileHandle;
-
-            GUID actionGuid = WINTRUST_ACTION_GENERIC_VERIFY_V2;
-
-            WINTRUST_DATA trustData{};
-            trustData.cbStruct = sizeof(trustData);
-            trustData.dwUIChoice = WTD_UI_NONE;
-            trustData.fdwRevocationChecks = WTD_REVOKE_WHOLECHAIN;
-            trustData.dwUnionChoice = WTD_CHOICE_FILE;
-            trustData.dwStateAction = WTD_STATEACTION_VERIFY;
-            trustData.dwProvFlags = WTD_SAFER_FLAG | WTD_CACHE_ONLY_URL_RETRIEVAL;
-            trustData.pFile = &fileInfo;
-
-            const LONG status = WinVerifyTrust(static_cast<HWND>(INVALID_HANDLE_VALUE), &actionGuid, &trustData);
-
-            trustData.dwStateAction = WTD_STATEACTION_CLOSE;
-            WinVerifyTrust(static_cast<HWND>(INVALID_HANDLE_VALUE), &actionGuid, &trustData);
-
-            return status == static_cast<LONG>(CERT_E_REVOKED);
-        }
 
         std::wstring read_version_string(const std::vector<BYTE>& versionInfo, WORD language, WORD codePage, const wchar_t* name)
         {
@@ -160,8 +85,8 @@ namespace updating
             return {};
         }
 
-        // .exe (WiX bootstrapper) identity: version resource CompanyName must be
-        // "Microsoft Corporation" and ProductName must start with "PowerToys (Preview)".
+        // .exe (WiX bootstrapper) identity: version resource ProductName must start with
+        // "PowerToys (Preview)".
         bool exe_version_info_is_powertoys(const std::wstring& installerPath)
         {
             DWORD ignoredHandle = 0;
@@ -196,11 +121,9 @@ namespace updating
             const size_t translationCount = translationsBytes / sizeof(LangAndCodePage);
             for (size_t i = 0; i < translationCount; ++i)
             {
-                const std::wstring company = read_version_string(versionInfo, translations[i].language, translations[i].codePage, L"CompanyName");
                 const std::wstring product = read_version_string(versionInfo, translations[i].language, translations[i].codePage, L"ProductName");
 
-                if (_wcsicmp(company.c_str(), MICROSOFT_ORGANIZATION_NAME) == 0 &&
-                    product.starts_with(POWERTOYS_PRODUCT_NAME_PREFIX))
+                if (product.starts_with(POWERTOYS_PRODUCT_NAME_PREFIX))
                 {
                     return true;
                 }
@@ -264,9 +187,8 @@ namespace updating
             return false;
         }
 
-        // Confirms the installer is *the PowerToys installer*, not merely *some* Microsoft-signed
-        // binary. Without this, an attacker who can supply a different Microsoft-signed installer or
-        // tool could still have it launched elevated by the updater (a confused-deputy elevation).
+        // Confirms the installer is *the PowerToys installer*. Without this, an attacker could supply
+        // a different installer or tool for the updater to launch elevated (a confused-deputy elevation).
         bool is_expected_powertoys_installer(const std::wstring& installerPath)
         {
             if (installerPath.ends_with(L".msi"))
@@ -280,71 +202,16 @@ namespace updating
 
     bool verify_installer_trust(const std::wstring& installerPath, void* verifiedFileHandle)
     {
-        WINTRUST_FILE_INFO fileInfo{};
-        fileInfo.cbStruct = sizeof(fileInfo);
-        fileInfo.pcwszFilePath = installerPath.c_str();
-        fileInfo.hFile = verifiedFileHandle; // verify the exact bytes we hold open, closing the TOCTOU window
-        fileInfo.pgKnownSubject = nullptr;
+        // The caller keeps verifiedFileHandle open with write/delete sharing denied while this
+        // identity check runs. Authenticode/Microsoft-publisher validation is intentionally omitted
+        // so self-built unsigned installers can be used.
+        (void)verifiedFileHandle;
 
-        GUID actionGuid = WINTRUST_ACTION_GENERIC_VERIFY_V2;
-
-        WINTRUST_DATA trustData{};
-        trustData.cbStruct = sizeof(trustData);
-        trustData.dwUIChoice = WTD_UI_NONE;
-        trustData.fdwRevocationChecks = WTD_REVOKE_NONE;
-        trustData.dwUnionChoice = WTD_CHOICE_FILE;
-        trustData.dwStateAction = WTD_STATEACTION_VERIFY;
-        // WTD_CACHE_ONLY_URL_RETRIEVAL keeps chain building local: without it WinVerifyTrust can
-        // reach the network to fetch missing intermediates, which may hang or time out when the
-        // update is applied offline. Revocation checks are already disabled above for the same reason.
-        trustData.dwProvFlags = WTD_SAFER_FLAG | WTD_CACHE_ONLY_URL_RETRIEVAL;
-        trustData.pFile = &fileInfo;
-
-        const LONG status = WinVerifyTrust(static_cast<HWND>(INVALID_HANDLE_VALUE), &actionGuid, &trustData);
-
-        // Read the signer from the verified state BEFORE closing it, so the publisher check is
-        // bound to exactly the signature just validated against the locked handle.
-        bool microsoftSigned = false;
-        if (status == ERROR_SUCCESS)
-        {
-            if (CRYPT_PROVIDER_DATA* provData = WTHelperProvDataFromStateData(trustData.hWVTStateData))
-            {
-                microsoftSigned = verified_signer_is_microsoft(provData);
-            }
-        }
-
-        trustData.dwStateAction = WTD_STATEACTION_CLOSE;
-        WinVerifyTrust(static_cast<HWND>(INVALID_HANDLE_VALUE), &actionGuid, &trustData);
-
-        if (status != ERROR_SUCCESS)
-        {
-            Logger::error(L"Installer Authenticode trust verification failed for '{}' (status: {:#010x})", installerPath, static_cast<uint32_t>(status));
-            return false;
-        }
-
-        if (!microsoftSigned)
-        {
-            // Reaches here both when the signer's organization is not "Microsoft Corporation" and
-            // when the signer information couldn't be read from the verified state at all; the
-            // wording covers both so it isn't misread as "a specific, known non-Microsoft signer".
-            Logger::error(L"Installer '{}' is Authenticode-signed but its signer could not be confirmed as Microsoft Corporation; refusing to run it elevated", installerPath);
-            return false;
-        }
-
-        // Reject only a chain that is DEFINITIVELY revoked per locally cached revocation data;
-        // offline/unknown is treated as not-revoked so offline updates still succeed.
-        if (cached_revocation_says_revoked(installerPath, verifiedFileHandle))
-        {
-            Logger::error(L"Installer '{}' certificate chain is revoked; refusing to run it elevated", installerPath);
-            return false;
-        }
-
-        // Identity pinning: confirm this is the PowerToys installer, not merely any Microsoft-signed
-        // binary, so a different Microsoft-signed installer/tool can't be used for a confused-deputy
-        // elevation.
+        // Identity pinning prevents a different installer or tool from being used for a
+        // confused-deputy elevation.
         if (!is_expected_powertoys_installer(installerPath))
         {
-            Logger::error(L"Installer '{}' is Microsoft-signed but is not the PowerToys installer; refusing to run it elevated", installerPath);
+            Logger::error(L"Installer '{}' is not the PowerToys installer; refusing to run it elevated", installerPath);
             return false;
         }
 

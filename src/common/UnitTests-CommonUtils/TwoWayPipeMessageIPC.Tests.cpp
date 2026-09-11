@@ -56,7 +56,6 @@ namespace UnitTestsCommonUtils
             policy.enabled = true;
             policy.expectedDirectory = DirectoryOf(executable);
             policy.allowedBasenames = { BaseNameOf(executable) };
-            policy.requireMicrosoftSignature = false;
             return policy;
         }
 
@@ -511,7 +510,6 @@ namespace UnitTestsCommonUtils
                 policy.enabled = true;
                 policy.expectedDirectory = L"Z:\\not-the-test-host";
                 policy.allowedBasenames = { L"not-the-test-host.exe" };
-                policy.requireMicrosoftSignature = false;
                 policy.logReject = [this](const interop_auth::AuthResult&) {
                     SetEvent(handler_entered);
                     WaitForSingleObject(allow_handler_to_finish, 10'000);
@@ -748,7 +746,6 @@ namespace UnitTestsCommonUtils
             reject_policy.enabled = true;
             reject_policy.expectedDirectory = L"Z:\\not-the-test-host";
             reject_policy.allowedBasenames = { L"not-the-test-host.exe" };
-            reject_policy.requireMicrosoftSignature = false;
             server.start(token, reject_policy);
             CloseHandle(token);
 
@@ -808,7 +805,6 @@ namespace UnitTestsCommonUtils
             reject_policy.enabled = true;
             reject_policy.expectedDirectory = L"Z:\\not-the-test-host";
             reject_policy.allowedBasenames = { L"not-the-test-host.exe" };
-            reject_policy.requireMicrosoftSignature = false;
             reject_policy.logReject = [handler_rejected](const interop_auth::AuthResult&) {
                 SetEvent(handler_rejected);
             };
@@ -1097,7 +1093,6 @@ namespace UnitTestsCommonUtils
             reject_policy.enabled = true;
             reject_policy.expectedDirectory = L"Z:\\not-the-test-host";
             reject_policy.allowedBasenames = { L"not-the-test-host.exe" };
-            reject_policy.requireMicrosoftSignature = false;
             reject_policy.logReject = [handler_rejected](const interop_auth::AuthResult&) {
                 SetEvent(handler_rejected);
             };
